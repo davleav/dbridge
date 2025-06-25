@@ -1,0 +1,260 @@
+"""
+Database browser for exploring database structure
+"""
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QTreeView, QMenu,
+    QInputDialog, QMessageBox
+)
+from PyQt6.QtGui import QAction
+from PyQt6.QtCore import Qt, QAbstractItemModel, QModelIndex, pyqtSignal
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QIcon
+
+class DatabaseTreeModel(QStandardItemModel):
+    """Tree model for displaying database structure"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setHorizontalHeaderLabels(["Database Objects"])
+        self.connection = None
+    
+    def set_connection(self, connection):
+        """Set the database connection and refresh the model"""
+        self.connection = connection
+        # If connection is None, completely clear the model
+        if connection is None:
+            # First remove all rows
+            self.removeRows(0, self.rowCount())
+            # Then clear any remaining data
+            self.clear()
+            # Reset the header
+            self.setHorizontalHeaderLabels(["Database Objects"])
+        else:
+            self.refresh()
+    
+    def refresh(self):
+        """Refresh the database structure"""
+        self.clear()
+        self.setHorizontalHeaderLabels(["Database Objects"])
+        
+        if not self.connection:
+            # Ensure the model is completely empty when there's no connection
+            return
+        
+        # Add database root item
+        db_name = self.connection.get_database_name()
+        db_item = QStandardItem(db_name)
+        db_item.setData("database", Qt.ItemDataRole.UserRole)
+        self.appendRow(db_item)
+        
+        # Add tables folder
+        tables_item = QStandardItem("Tables")
+        tables_item.setData("tables_folder", Qt.ItemDataRole.UserRole)
+        db_item.appendRow(tables_item)
+        
+        # Add tables
+        tables = self.connection.get_tables()
+        for table in tables:
+            table_item = QStandardItem(table)
+            table_item.setData("table", Qt.ItemDataRole.UserRole)
+            table_item.setData(table, Qt.ItemDataRole.UserRole + 1)
+            tables_item.appendRow(table_item)
+            
+            # Add columns folder
+            columns_item = QStandardItem("Columns")
+            columns_item.setData("columns_folder", Qt.ItemDataRole.UserRole)
+            table_item.appendRow(columns_item)
+            
+            # Add columns
+            columns = self.connection.get_columns(table)
+            for column in columns:
+                column_item = QStandardItem(f"{column['name']} ({column['type']})")
+                column_item.setData("column", Qt.ItemDataRole.UserRole)
+                column_item.setData(column, Qt.ItemDataRole.UserRole + 1)
+                columns_item.appendRow(column_item)
+            
+            # Add indexes folder
+            indexes_item = QStandardItem("Indexes")
+            indexes_item.setData("indexes_folder", Qt.ItemDataRole.UserRole)
+            table_item.appendRow(indexes_item)
+            
+            # Add indexes
+            indexes = self.connection.get_indexes(table)
+            for index in indexes:
+                index_item = QStandardItem(index['name'])
+                index_item.setData("index", Qt.ItemDataRole.UserRole)
+                index_item.setData(index, Qt.ItemDataRole.UserRole + 1)
+                indexes_item.appendRow(index_item)
+        
+        # Add views folder
+        views_item = QStandardItem("Views")
+        views_item.setData("views_folder", Qt.ItemDataRole.UserRole)
+        db_item.appendRow(views_item)
+        
+        # Add views
+        views = self.connection.get_views()
+        for view in views:
+            view_item = QStandardItem(view)
+            view_item.setData("view", Qt.ItemDataRole.UserRole)
+            view_item.setData(view, Qt.ItemDataRole.UserRole + 1)
+            views_item.appendRow(view_item)
+
+
+class DatabaseBrowser(QWidget):
+    """Widget for browsing database structure"""
+    
+    # Signal to emit when a query is generated
+    query_generated = pyqtSignal(str)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+        self._create_ui()
+    
+    def _create_ui(self):
+        """Create the UI components"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Tree view for database structure
+        self.tree_view = QTreeView()
+        self.tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree_view.customContextMenuRequested.connect(self._show_context_menu)
+        self.tree_view.doubleClicked.connect(self._handle_double_click)
+        
+        self.tree_model = DatabaseTreeModel()
+        self.tree_view.setModel(self.tree_model)
+        
+        layout.addWidget(self.tree_view)
+        
+    def clear(self):
+        """Clear the database tree view completely by recreating it from scratch"""
+        # First disconnect all signals from the old tree view
+        if hasattr(self, 'tree_view'):
+            self.tree_view.setModel(None)
+            self.tree_view.doubleClicked.disconnect()
+            self.tree_view.customContextMenuRequested.disconnect()
+            self.tree_view.deleteLater()
+        
+        # Delete the old model if it exists
+        if hasattr(self, 'tree_model') and self.tree_model:
+            self.tree_model.deleteLater()
+        
+        # Create a completely new tree view
+        self.tree_view = QTreeView()
+        self.tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree_view.customContextMenuRequested.connect(self._show_context_menu)
+        self.tree_view.doubleClicked.connect(self._handle_double_click)
+        
+        # Create a completely new model
+        self.tree_model = DatabaseTreeModel(self)
+        self.tree_view.setModel(self.tree_model)
+        
+        # Replace the old tree view in the layout
+        # First remove all widgets from the layout
+        layout = self.layout()
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        
+        # Add the new tree view to the layout
+        layout.addWidget(self.tree_view)
+        
+        # Force a repaint
+        self.update()
+    
+    def set_connection(self, connection):
+        """Set the database connection"""
+        # Check if the model is a DatabaseTreeModel
+        if not hasattr(self.tree_model, 'set_connection'):
+            # If not, recreate the model as a DatabaseTreeModel
+            self.tree_model = DatabaseTreeModel(self)
+            self.tree_view.setModel(self.tree_model)
+        
+        # Now set the connection
+        self.tree_model.set_connection(connection)
+        self.tree_view.expandToDepth(0)
+        
+    def clear_connection(self):
+        """Clear the current connection"""
+        print("Using the updated clear_connection method")
+        # Simply set the connection to None in the tree model
+        if hasattr(self, 'tree_model') and self.tree_model:
+            self.tree_model.set_connection(None)
+        
+        # Force a repaint
+        self.update()
+    
+    def _show_context_menu(self, position):
+        """Show context menu for tree items"""
+        index = self.tree_view.indexAt(position)
+        if not index.isValid():
+            return
+        
+        item = self.tree_model.itemFromIndex(index)
+        item_type = item.data(Qt.ItemDataRole.UserRole)
+        
+        menu = QMenu()
+        
+        if item_type == "table":
+            # Table context menu
+            table_name = item.data(Qt.ItemDataRole.UserRole + 1)
+            
+            select_action = QAction("Select All Rows", self)
+            select_action.triggered.connect(lambda: self._generate_select_query(table_name))
+            menu.addAction(select_action)
+            
+            menu.addSeparator()
+            
+            structure_action = QAction("Show Structure", self)
+            structure_action.triggered.connect(lambda: self._show_table_structure(table_name))
+            menu.addAction(structure_action)
+        
+        elif item_type == "view":
+            # View context menu
+            view_name = item.data(Qt.ItemDataRole.UserRole + 1)
+            
+            select_action = QAction("Select All Rows", self)
+            select_action.triggered.connect(lambda: self._generate_select_query(view_name))
+            menu.addAction(select_action)
+            
+            menu.addSeparator()
+            
+            show_def_action = QAction("Show Definition", self)
+            show_def_action.triggered.connect(lambda: self._show_view_definition(view_name))
+            menu.addAction(show_def_action)
+        
+        if menu.actions():
+            menu.exec(self.tree_view.viewport().mapToGlobal(position))
+    
+    def _handle_double_click(self, index):
+        """Handle double-click on tree items"""
+        if not index.isValid():
+            return
+        
+        item = self.tree_model.itemFromIndex(index)
+        item_type = item.data(Qt.ItemDataRole.UserRole)
+        
+        if item_type == "table":
+            # Generate SELECT query for the table
+            table_name = item.data(Qt.ItemDataRole.UserRole + 1)
+            self._generate_select_query(table_name)
+    
+    def _generate_select_query(self, table_name):
+        """Generate a SELECT query for the table/view"""
+        query = f"SELECT * FROM {table_name} LIMIT 100;"
+        
+        # Emit the signal with the generated query
+        self.query_generated.emit(query)
+    
+    def _show_table_structure(self, table_name):
+        """Show the table structure"""
+        # This would display the table structure in a dialog or new tab
+        print(f"Show structure for table: {table_name}")
+    
+    def _show_view_definition(self, view_name):
+        """Show the view definition"""
+        # This would display the view definition in a dialog or new tab
+        print(f"Show definition for view: {view_name}")

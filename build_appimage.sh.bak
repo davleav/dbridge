@@ -1,0 +1,111 @@
+#!/bin/bash
+# Script to build an AppImage for DBridge
+
+set -e
+
+# Clean up any previous build artifacts
+echo "Cleaning up previous build artifacts..."
+rm -rf venv AppDir dist build *.AppImage resources/icon.png
+mkdir -p resources
+
+# Create a virtual environment
+python -m venv venv
+source venv/bin/activate
+
+# Verify the virtual environment is active
+which python
+which pip
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Create AppDir structure
+mkdir -p AppDir/usr/bin
+mkdir -p AppDir/usr/share/applications
+mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+
+# Create a simple icon for the application
+cat > resources/icon.svg << 'EOL'
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <circle cx="128" cy="128" r="120" fill="#3498db" />
+  <text x="128" y="148" font-family="Arial" font-size="100" text-anchor="middle" fill="white">SQL</text>
+</svg>
+EOL
+
+# Check if we can use an alternative method for SVG to PNG conversion
+if command -v convert &> /dev/null; then
+    echo "Using ImageMagick to convert SVG to PNG"
+    convert -background none -size 256x256 resources/icon.svg resources/icon.png
+elif command -v inkscape &> /dev/null; then
+    echo "Using Inkscape to convert SVG to PNG"
+    inkscape -w 256 -h 256 resources/icon.svg -o resources/icon.png
+else
+    # Try with CairoSVG as a fallback
+    echo "Attempting to use CairoSVG for conversion"
+    # Install system dependencies if possible
+    if command -v apt-get &> /dev/null; then
+        echo "Installing Cairo dependencies via apt"
+        sudo apt-get update
+        sudo apt-get install -y libcairo2-dev pkg-config python3-dev
+    elif command -v dnf &> /dev/null; then
+        echo "Installing Cairo dependencies via dnf"
+        sudo dnf install -y cairo-devel pkgconfig python3-devel
+    elif command -v pacman &> /dev/null; then
+        echo "Installing Cairo dependencies via pacman"
+        sudo pacman -S --noconfirm cairo pkgconf python
+    fi
+    
+    # Install CairoSVG in the virtual environment
+    pip install cairosvg
+    # Verify cairosvg is installed
+    pip list | grep cairosvg
+    # Use the Python from the virtual environment explicitly
+    ./venv/bin/python -c "import cairosvg; cairosvg.svg2png(url='resources/icon.svg', write_to='resources/icon.png', output_width=256, output_height=256)"
+fi
+
+# Copy icon to AppDir
+cp resources/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/dbridge.png
+
+# Create desktop file
+cat > AppDir/usr/share/applications/dbridge.desktop << 'EOL'
+[Desktop Entry]
+Name=DBridge
+Comment=A user-friendly SQL client
+Exec=dbridge
+Icon=dbridge
+Type=Application
+Categories=Development;Database;
+EOL
+
+# Create AppRun script
+cat > AppDir/AppRun << 'EOL'
+#!/bin/bash
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+export PATH="${HERE}/usr/bin:${PATH}"
+export PYTHONPATH="${HERE}/usr/lib/python3.13/site-packages:${PYTHONPATH}"
+exec "${HERE}/usr/bin/dbridge" "$@"
+EOL
+chmod +x AppDir/AppRun
+
+# Create launcher script
+cat > AppDir/usr/bin/dbridge << 'EOL'
+#!/bin/bash
+python -m src.main
+EOL
+chmod +x AppDir/usr/bin/dbridge
+
+# Use PyInstaller to bundle the application
+pip install pyinstaller
+pyinstaller --onedir --name dbridge src/main.py
+
+# Copy the bundled application to AppDir
+cp -r dist/dbridge/* AppDir/usr/bin/
+
+# Download and use appimagetool
+wget -c "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+chmod +x appimagetool-x86_64.AppImage
+./appimagetool-x86_64.AppImage AppDir DBridge-Beta-0.8.0-x86_64.AppImage
+
+echo "AppImage created: DBridge-Beta-0.8.0-x86_64.AppImage"

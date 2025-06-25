@@ -1,0 +1,129 @@
+name: Build and Release AppImage
+
+on:
+  push:
+    tags:
+      - 'v*'  # Run workflow on version tags, e.g. v0.8.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install PyQt6 SQLAlchemy pymysql psycopg2-binary pandas matplotlib pyinstaller
+          fi
+          
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+      - name: Build AppImage
+        run: |
+          # Clean up any previous build artifacts
+          rm -rf venv AppDir dist build *.AppImage resources/icon.png
+          mkdir -p resources
+          
+          # Copy the icon
+          cp DBridge.png resources/icon.png
+          
+          # Create AppDir structure
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          
+          # Copy icon to AppDir
+          cp resources/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/dbridge.png
+          cp resources/icon.png AppDir/dbridge.png
+          
+          # Create desktop file with version
+          echo "[Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=DBridge
+          Comment=A user-friendly SQL client (v${VERSION})
+          Exec=dbridge
+          Icon=dbridge
+          Categories=Development;Database;
+          Terminal=false
+          StartupNotify=true" > AppDir/usr/share/applications/dbridge.desktop
+          
+          # Copy desktop file to root of AppDir
+          cp AppDir/usr/share/applications/dbridge.desktop AppDir/dbridge.desktop
+          
+          # Set permissions
+          chmod 755 AppDir/dbridge.desktop
+          chmod 755 AppDir/usr/share/applications/dbridge.desktop
+          
+          # Create AppRun script
+          cat > AppDir/AppRun << 'APPRUNEOF'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          export PATH="${HERE}/usr/bin:${PATH}"
+          export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${PYTHONPATH}"
+          exec "${HERE}/usr/bin/dbridge" "$@"
+          APPRUNEOF
+          chmod +x AppDir/AppRun
+          
+          # Create launcher script
+          cat > AppDir/usr/bin/dbridge << 'LAUNCHEREOF'
+          #!/bin/bash
+          python -m src.main
+          LAUNCHEREOF
+          chmod +x AppDir/usr/bin/dbridge
+          
+          # Use PyInstaller to bundle the application
+          if [ -f src/main.py ]; then
+            pyinstaller --onedir --name dbridge src/main.py
+          else
+            MAIN_PY=$(find . -name "main.py" | head -1)
+            if [ -n "$MAIN_PY" ]; then
+              pyinstaller --onedir --name dbridge "$MAIN_PY"
+            else
+              echo "Error: No main.py found. Cannot continue."
+              exit 1
+            fi
+          fi
+          
+          # Copy the bundled application to AppDir
+          cp -r dist/dbridge/* AppDir/usr/bin/
+          
+          # Download and use appimagetool
+          wget -c "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool-x86_64.AppImage
+          
+          # Build the AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir DBridge-${VERSION}-x86_64.AppImage
+          
+          # Ensure the AppImage is executable
+          chmod +x DBridge-${VERSION}-x86_64.AppImage
+          
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ env.VERSION }}
+        with:
+          files: DBridge-${VERSION}-x86_64.AppImage
+          name: DBridge v${VERSION}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
