@@ -72,54 +72,76 @@ class TestDatabaseTreeModel(unittest.TestCase):
         
         # Get the database item
         db_item = self.model.item(0)
-        self.assertEqual(db_item.text(), "test_db")
-        self.assertEqual(db_item.data(Qt.ItemDataRole.UserRole), "database")
-        
-        # Check tables folder
-        self.assertEqual(db_item.rowCount(), 2)  # Tables and Views folders
-        tables_item = db_item.child(0)
-        self.assertEqual(tables_item.text(), "Tables")
-        self.assertEqual(tables_item.data(Qt.ItemDataRole.UserRole), "tables_folder")
+        self.assertIsNotNone(db_item, "Database item should not be None")
+        # Use if check to satisfy Pylance
+        if db_item is not None:
+            self.assertEqual(db_item.text(), "test_db")
+            self.assertEqual(db_item.data(Qt.ItemDataRole.UserRole), "database")
+            
+            # Check tables folder
+            self.assertEqual(db_item.rowCount(), 2)  # Tables and Views folders
+            tables_item = db_item.child(0)
+            self.assertIsNotNone(tables_item, "Tables item should not be None")
+            # Use if check to satisfy Pylance
+            if tables_item is not None:
+                self.assertEqual(tables_item.text(), "Tables")
+                self.assertEqual(tables_item.data(Qt.ItemDataRole.UserRole), "tables_folder")
         
         # Check tables
-        self.assertEqual(tables_item.rowCount(), 2)  # table1 and table2
-        table1_item = tables_item.child(0)
-        self.assertEqual(table1_item.text(), "table1")
-        self.assertEqual(table1_item.data(Qt.ItemDataRole.UserRole), "table")
-        
-        # Check columns folder for table1
-        self.assertEqual(table1_item.rowCount(), 2)  # Columns and Indexes folders
-        columns_item = table1_item.child(0)
-        self.assertEqual(columns_item.text(), "Columns")
-        self.assertEqual(columns_item.data(Qt.ItemDataRole.UserRole), "columns_folder")
-        
-        # Check columns for table1
-        self.assertEqual(columns_item.rowCount(), 2)  # id and name columns
-        id_column_item = columns_item.child(0)
-        self.assertEqual(id_column_item.text(), "id (INTEGER)")
-        self.assertEqual(id_column_item.data(Qt.ItemDataRole.UserRole), "column")
-        
-        # Check indexes folder for table1
-        indexes_item = table1_item.child(1)
-        self.assertEqual(indexes_item.text(), "Indexes")
-        self.assertEqual(indexes_item.data(Qt.ItemDataRole.UserRole), "indexes_folder")
-        
-        # Check indexes for table1
-        self.assertEqual(indexes_item.rowCount(), 1)  # idx_id index
-        index_item = indexes_item.child(0)
-        self.assertEqual(index_item.text(), "idx_id")
-        self.assertEqual(index_item.data(Qt.ItemDataRole.UserRole), "index")
+        if tables_item is not None:
+            self.assertEqual(tables_item.rowCount(), 2)  # table1 and table2
+            table1_item = tables_item.child(0)
+            self.assertIsNotNone(table1_item, "Table1 item should not be None")
+            if table1_item is not None:
+                self.assertEqual(table1_item.text(), "table1")
+                self.assertEqual(table1_item.data(Qt.ItemDataRole.UserRole), "table")
+                
+                # Check columns folder for table1
+                self.assertEqual(table1_item.rowCount(), 2)  # Columns and Indexes folders
+                columns_item = table1_item.child(0)
+                self.assertIsNotNone(columns_item, "Columns item should not be None")
+                if columns_item is not None:
+                    self.assertEqual(columns_item.text(), "Columns")
+                    self.assertEqual(columns_item.data(Qt.ItemDataRole.UserRole), "columns_folder")
+                    
+                    # Check columns for table1
+                    self.assertEqual(columns_item.rowCount(), 2)  # id and name columns
+                    id_column_item = columns_item.child(0)
+                    self.assertIsNotNone(id_column_item, "ID column item should not be None")
+                    if id_column_item is not None:
+                        self.assertEqual(id_column_item.text(), "id (INTEGER)")
+                        self.assertEqual(id_column_item.data(Qt.ItemDataRole.UserRole), "column")
+                
+                # Check indexes folder for table1
+                indexes_item = table1_item.child(1)
+                self.assertIsNotNone(indexes_item, "Indexes item should not be None")
+                if indexes_item is not None:
+                    self.assertEqual(indexes_item.text(), "Indexes")
+                    self.assertEqual(indexes_item.data(Qt.ItemDataRole.UserRole), "indexes_folder")
+                    
+                    # Check indexes for table1
+                    self.assertEqual(indexes_item.rowCount(), 1)  # idx_id index
+                    index_item = indexes_item.child(0)
+                    self.assertIsNotNone(index_item, "Index item should not be None")
+                    if index_item is not None:
+                        self.assertEqual(index_item.text(), "idx_id")
+                        self.assertEqual(index_item.data(Qt.ItemDataRole.UserRole), "index")
         
         # Check views folder
-        views_item = db_item.child(1)
-        self.assertEqual(views_item.text(), "Views")
-        self.assertEqual(views_item.data(Qt.ItemDataRole.UserRole), "views_folder")
-        
-        # Check views
-        self.assertEqual(views_item.rowCount(), 1)  # view1
-        view_item = views_item.child(0)
-        self.assertEqual(view_item.text(), "view1")
-        self.assertEqual(view_item.data(Qt.ItemDataRole.UserRole), "view")
+        if db_item is not None:
+            views_item = db_item.child(1)
+            self.assertIsNotNone(views_item, "Views item should not be None")
+            if views_item is not None:
+                self.assertEqual(views_item.text(), "Views")
+                self.assertEqual(views_item.data(Qt.ItemDataRole.UserRole), "views_folder")
+                
+                # Check views
+                self.assertEqual(views_item.rowCount(), 1)  # view1
+                view_item = views_item.child(0)
+                self.assertIsNotNone(view_item, "View item should not be None")
+                if view_item is not None:
+                    self.assertEqual(view_item.text(), "view1")
+                    self.assertEqual(view_item.data(Qt.ItemDataRole.UserRole), "view")
     
     def test_refresh_no_connection(self):
         """Test refreshing the model with no connection"""
@@ -150,36 +172,31 @@ class TestDatabaseTreeModel(unittest.TestCase):
         
         # Get the database item
         db_item = self.model.item(0)
-        self.assertEqual(db_item.text(), "(No database selected)")
-        self.assertEqual(db_item.data(Qt.ItemDataRole.UserRole), "database")
-        
-        # Check that the database item has the correct children
-        self.assertEqual(db_item.rowCount(), 3)  # Available Databases, Tables, and Views folders
-        
-        # Check Available Databases folder
-        databases_item = db_item.child(0)
-        self.assertEqual(databases_item.text(), "Available Databases")
-        self.assertEqual(databases_item.data(Qt.ItemDataRole.UserRole), "databases_folder")
-        
-        # Check that the Available Databases folder has the correct children
-        self.assertEqual(databases_item.rowCount(), 3)  # db1, db2, db3
-        
-        # Check the first database
-        db1_item = databases_item.child(0)
-        self.assertEqual(db1_item.text(), "db1")
-        self.assertEqual(db1_item.data(Qt.ItemDataRole.UserRole), "available_database")
-        self.assertEqual(db1_item.data(Qt.ItemDataRole.UserRole + 1), "db1")
-        
-        # Check Tables folder
-        tables_item = db_item.child(1)
-        self.assertEqual(tables_item.text(), "Tables")
-        self.assertEqual(tables_item.data(Qt.ItemDataRole.UserRole), "tables_folder")
-        
-        # Check that the Tables folder has a message
-        self.assertEqual(tables_item.rowCount(), 1)
-        message_item = tables_item.child(0)
-        self.assertEqual(message_item.text(), "Select a database first")
-        self.assertEqual(message_item.data(Qt.ItemDataRole.UserRole), "message")
+        self.assertIsNotNone(db_item, "Database item should not be None")
+        if db_item is not None:
+            self.assertEqual(db_item.text(), "(No database selected)")
+            self.assertEqual(db_item.data(Qt.ItemDataRole.UserRole), "database")
+            
+            # Check that the database item has the correct children - only Available Databases folder
+            self.assertEqual(db_item.rowCount(), 1)  # Only Available Databases folder
+            
+            # Check Available Databases folder
+            databases_item = db_item.child(0)
+            self.assertIsNotNone(databases_item, "Databases item should not be None")
+            if databases_item is not None:
+                self.assertEqual(databases_item.text(), "Available Databases")
+                self.assertEqual(databases_item.data(Qt.ItemDataRole.UserRole), "databases_folder")
+                
+                # Check that the Available Databases folder has the correct children
+                self.assertEqual(databases_item.rowCount(), 3)  # db1, db2, db3
+                
+                # Check the first database
+                db1_item = databases_item.child(0)
+                self.assertIsNotNone(db1_item, "DB1 item should not be None")
+                if db1_item is not None:
+                    self.assertEqual(db1_item.text(), "db1")
+                    self.assertEqual(db1_item.data(Qt.ItemDataRole.UserRole), "available_database")
+                    self.assertEqual(db1_item.data(Qt.ItemDataRole.UserRole + 1), "db1")
 
 
 class TestDatabaseBrowser(unittest.TestCase):

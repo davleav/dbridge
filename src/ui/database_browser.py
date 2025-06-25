@@ -58,7 +58,7 @@ class DatabaseTreeModel(QStandardItemModel):
         has_database_selected = db_name != "(No database selected)"
         
         if not has_database_selected:
-            # If no database is selected, show available databases, tables, and views folders
+            # If no database is selected, only show available databases folder
             # 1. Available Databases folder
             databases_item = QStandardItem("Available Databases")
             databases_item.setData("databases_folder", Qt.ItemDataRole.UserRole)
@@ -77,26 +77,6 @@ class DatabaseTreeModel(QStandardItemModel):
                 error_item = QStandardItem("Error loading databases")
                 error_item.setData("message", Qt.ItemDataRole.UserRole)
                 databases_item.appendRow(error_item)
-                
-            # 2. Add Tables folder with a message
-            tables_item = QStandardItem("Tables")
-            tables_item.setData("tables_folder", Qt.ItemDataRole.UserRole)
-            db_item.appendRow(tables_item)
-            
-            # Add a message to the Tables folder
-            message_item = QStandardItem("Select a database first")
-            message_item.setData("message", Qt.ItemDataRole.UserRole)
-            tables_item.appendRow(message_item)
-            
-            # 3. Add Views folder with a message
-            views_item = QStandardItem("Views")
-            views_item.setData("views_folder", Qt.ItemDataRole.UserRole)
-            db_item.appendRow(views_item)
-            
-            # Add a message to the Views folder
-            message_item = QStandardItem("Select a database first")
-            message_item.setData("message", Qt.ItemDataRole.UserRole)
-            views_item.appendRow(message_item)
         else:
             # Only show tables and views when a database is selected
             

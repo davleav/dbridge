@@ -191,6 +191,33 @@ class DatabaseConnection:
         """Check if the current user has admin privileges"""
         return self.user_permissions.get('is_admin', False)
     
+    def is_system_database(self, database_name):
+        """Check if the given database is a system database
+        
+        Args:
+            database_name: Name of the database to check
+            
+        Returns:
+            True if it's a system database, False otherwise
+        """
+        if not database_name:
+            return False
+            
+        # Common system database names across different database systems
+        system_databases = [
+            'information_schema',  # MySQL, PostgreSQL
+            'mysql',               # MySQL
+            'performance_schema',  # MySQL
+            'sys',                 # MySQL
+            'pg_catalog',          # PostgreSQL
+            'postgres',            # PostgreSQL default admin database
+            'template0',           # PostgreSQL
+            'template1'            # PostgreSQL
+        ]
+        
+        # Case-insensitive check
+        return database_name.lower() in [db.lower() for db in system_databases]
+    
     def get_available_databases(self):
         """Get a list of available databases on the server"""
         try:

@@ -444,7 +444,13 @@ class DatabaseManagerDialog(QDialog):
             selected_db = selected_items[0].text()
         
         # Also check if a database is selected in the tables tab dropdown
-        has_db_selected = self.tables_tab.db_selector.currentText() != ""
+        current_db = self.tables_tab.db_selector.currentText()
+        has_db_selected = current_db != ""
+        
+        # Check if the selected database is a system database
+        is_system_db = False
+        if has_db_selected:
+            is_system_db = self.connection.is_system_database(current_db)
         
         # Check if a table is selected in the tables tab
         selected_table = None
@@ -453,8 +459,9 @@ class DatabaseManagerDialog(QDialog):
             selected_table = selected_items[0].text()
         
         # Update tables tab buttons based on permissions
-        can_create_tables = has_db_selected
-        can_drop_tables = has_db_selected and selected_table is not None
+        # Disable operations on system databases
+        can_create_tables = has_db_selected and not is_system_db
+        can_drop_tables = has_db_selected and selected_table is not None and not is_system_db
         
         # Only enable buttons if user has appropriate permissions
         self.tables_tab.create_table_button.setEnabled(can_create_tables)
@@ -469,9 +476,9 @@ class DatabaseManagerDialog(QDialog):
         has_table_selected_for_columns = self.columns_tab.table_selector.currentText() != ""
         has_column_selected = len(self.columns_tab.columns_list.selectedItems()) > 0
         
-        # Only enable buttons if user has appropriate permissions
-        can_alter_table = has_table_selected_for_columns
-        can_alter_column = has_table_selected_for_columns and has_column_selected
+        # Only enable buttons if user has appropriate permissions and not a system database
+        can_alter_table = has_table_selected_for_columns and not is_system_db
+        can_alter_column = has_table_selected_for_columns and has_column_selected and not is_system_db
         
         self.columns_tab.add_column_button.setEnabled(can_alter_table)
         self.columns_tab.modify_column_button.setEnabled(can_alter_column)
@@ -481,12 +488,26 @@ class DatabaseManagerDialog(QDialog):
         has_table_selected_for_indexes = self.indexes_tab.table_selector.currentText() != ""
         has_index_selected = len(self.indexes_tab.indexes_list.selectedItems()) > 0
         
-        # Only enable buttons if user has appropriate permissions
-        can_create_index = has_table_selected_for_indexes
-        can_drop_index = has_table_selected_for_indexes and has_index_selected
+        # Only enable buttons if user has appropriate permissions and not a system database
+        can_create_index = has_table_selected_for_indexes and not is_system_db
+        can_drop_index = has_table_selected_for_indexes and has_index_selected and not is_system_db
         
         self.indexes_tab.create_index_button.setEnabled(can_create_index)
         self.indexes_tab.drop_index_button.setEnabled(can_drop_index)
+        
+        # If this is a system database, show a warning label
+        if is_system_db:
+            # Check if we already have a warning label
+            if not hasattr(self, 'system_db_warning_shown') or not self.system_db_warning_shown:
+                QMessageBox.information(
+                    self, 
+                    "System Database", 
+                    f"'{current_db}' is a system database. Modifications are disabled to prevent system damage."
+                )
+                self.system_db_warning_shown = True
+        else:
+            # Reset the warning flag when switching to a non-system database
+            self.system_db_warning_shown = False
     
     def _populate_columns(self, table_name):
         """Populate the columns list for the selected table"""
@@ -676,6 +697,16 @@ class DatabaseManagerDialog(QDialog):
         
         db_name = selected_items[0].text()
         
+        # Check if this is a system database
+        if self.connection.is_system_database(db_name):
+            if not self._test_mode:
+                QMessageBox.warning(
+                    self, 
+                    "System Database", 
+                    f"'{db_name}' is a system database. Dropping system databases is not allowed to prevent system damage."
+                )
+            return
+        
         # Confirm the drop operation
         if self._test_mode:
             reply = QMessageBox.StandardButton.Yes
@@ -707,6 +738,15 @@ class DatabaseManagerDialog(QDialog):
         database_name = self.tables_tab.db_selector.currentText()
         if not database_name:
             QMessageBox.warning(self, "Warning", "Please select a database first.")
+            return
+            
+        # Check if this is a system database
+        if self.connection.is_system_database(database_name):
+            QMessageBox.warning(
+                self, 
+                "System Database", 
+                f"'{database_name}' is a system database. Creating tables is not allowed to prevent system damage."
+            )
             return
         
         dialog = CreateTableDialog(self)
@@ -850,6 +890,15 @@ class DatabaseManagerDialog(QDialog):
             QMessageBox.warning(self, "Warning", "Please select a database first.")
             return
             
+        # Check if this is a system database
+        if self.connection.is_system_database(database_name):
+            QMessageBox.warning(
+                self, 
+                "System Database", 
+                f"'{database_name}' is a system database. Dropping tables is not allowed to prevent system damage."
+            )
+            return
+            
         selected_items = self.tables_tab.tables_list.selectedItems()
         if not selected_items:
             if not self._test_mode:
@@ -901,6 +950,18 @@ class DatabaseManagerDialog(QDialog):
         table_name = self.columns_tab.table_selector.currentText()
         if not table_name:
             QMessageBox.warning(self, "Warning", "Please select a table.")
+            return
+            
+        # Get the current database
+        database_name = self.tables_tab.db_selector.currentText()
+        
+        # Check if this is a system database
+        if self.connection.is_system_database(database_name):
+            QMessageBox.warning(
+                self, 
+                "System Database", 
+                f"'{database_name}' is a system database. Adding columns is not allowed to prevent system damage."
+            )
             return
         
         # Show the add column dialog
@@ -975,6 +1036,18 @@ class DatabaseManagerDialog(QDialog):
         
         if not selected_items:
             QMessageBox.warning(self, "Warning", "Please select a column to modify.")
+            return
+            
+        # Get the current database
+        database_name = self.tables_tab.db_selector.currentText()
+        
+        # Check if this is a system database
+        if self.connection.is_system_database(database_name):
+            QMessageBox.warning(
+                self, 
+                "System Database", 
+                f"'{database_name}' is a system database. Modifying columns is not allowed to prevent system damage."
+            )
             return
         
         # Extract the column name from the list item text (format: "name (type)")
@@ -1116,6 +1189,18 @@ class DatabaseManagerDialog(QDialog):
         if not selected_items:
             QMessageBox.warning(self, "Warning", "Please select a column to drop.")
             return
+            
+        # Get the current database
+        database_name = self.tables_tab.db_selector.currentText()
+        
+        # Check if this is a system database
+        if self.connection.is_system_database(database_name):
+            QMessageBox.warning(
+                self, 
+                "System Database", 
+                f"'{database_name}' is a system database. Dropping columns is not allowed to prevent system damage."
+            )
+            return
         
         # Extract the column name from the list item text (format: "name (type)")
         column_text = selected_items[0].text()
@@ -1187,6 +1272,15 @@ class DatabaseManagerDialog(QDialog):
         database_name = self.tables_tab.db_selector.currentText()
         if not database_name:
             QMessageBox.warning(self, "Warning", "No database selected.")
+            return
+            
+        # Check if this is a system database
+        if self.connection.is_system_database(database_name):
+            QMessageBox.warning(
+                self, 
+                "System Database", 
+                f"'{database_name}' is a system database. Creating indexes is not allowed to prevent system damage."
+            )
             return
             
         # Save current database
@@ -1379,6 +1473,18 @@ class DatabaseManagerDialog(QDialog):
         
         if not selected_items:
             QMessageBox.warning(self, "Warning", "Please select an index to drop.")
+            return
+            
+        # Get the current database
+        database_name = self.tables_tab.db_selector.currentText()
+        
+        # Check if this is a system database
+        if self.connection.is_system_database(database_name):
+            QMessageBox.warning(
+                self, 
+                "System Database", 
+                f"'{database_name}' is a system database. Dropping indexes is not allowed to prevent system damage."
+            )
             return
         
         index_name = selected_items[0].text()
