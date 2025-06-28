@@ -28,13 +28,25 @@ A user-friendly SQL client for Linux that runs as an AppImage.
 
 ## Installation
 
-### Using the AppImage
+### Linux: Using the AppImage
 
-1. Download the latest `DBridge-Beta-0.8.1-x86_64.AppImage` from the releases page
-2. Make it executable: `chmod +x DBridge-Beta-0.8.1-x86_64.AppImage`
-3. Run it: `./DBridge-Beta-0.8.1-x86_64.AppImage`
+1. Download the latest `DBridge-[version]-x86_64.AppImage` from the releases page
+2. Make it executable: `chmod +x DBridge-[version]-x86_64.AppImage`
+3. Run it: `./DBridge-[version]-x86_64.AppImage`
+
+### Windows: Using the Installer
+
+1. Download the latest `DBridge-[version]-Setup.exe` from the releases page
+2. Run the installer and follow the on-screen instructions
+3. Launch DBridge from the Start menu or desktop shortcut
 
 ### Building from Source
+
+#### Prerequisites
+- Python 3.8 or higher
+- Git
+
+#### Steps for All Platforms
 
 1. Clone this repository:
    ```
@@ -52,11 +64,37 @@ A user-friendly SQL client for Linux that runs as an AppImage.
    python -m src.main
    ```
 
-4. (Optional) Build an AppImage:
+#### Building for Linux (AppImage)
+
+```
+bash build_appimage.sh
+```
+This will create a `DBridge-[version]-x86_64.AppImage` file.
+
+#### Building for Windows
+
+1. Install PyInstaller and Pillow:
    ```
-   bash build_appimage.sh
+   pip install pyinstaller pillow
    ```
-   This will create a `DBridge-Beta-0.8.1-x86_64.AppImage` file.
+
+2. Convert the icon to ICO format:
+   ```
+   python convert_icon.py
+   ```
+
+3. Build the executable:
+   ```
+   pyinstaller dbridge_windows.spec
+   ```
+
+4. Install Inno Setup (Windows only)
+5. Compile the installer:
+   ```
+   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" dbridge_installer.iss
+   ```
+
+The installer will be created in the `installer` directory.
 
 ## Usage
 
