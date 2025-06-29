@@ -20,6 +20,7 @@ from datetime import datetime
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from PyQt6.QtCore import QObject, pyqtSignal
 
 class DatabaseConnection:
     """Class representing a database connection"""
@@ -682,16 +683,42 @@ class DatabaseConnection:
             raise
 
 
-class ConnectionManager:
+class ConnectionManager(QObject):
     """Manager for database connections"""
+    
+    # Signal emitted when the system database visibility changes
+    system_databases_visibility_changed = pyqtSignal(bool)
+    
+    # Class variable to control visibility of system databases
+    _show_system_databases = False
     
     def __init__(self):
         """Initialize the connection manager"""
+        super().__init__()
         self.connections = {}  # Active connections
         self.connection_params = {}  # Stored connection parameters
         self.config_dir = self._get_config_dir()
         self._setup_encryption()
         self.load_connections()
+        
+    def set_show_system_databases(self, show):
+        """Set whether to show system databases application-wide
+        
+        Args:
+            show: Boolean indicating whether to show system databases
+        """
+        ConnectionManager._show_system_databases = show
+        # Emit the signal to notify all listeners
+        self.system_databases_visibility_changed.emit(show)
+        
+    @classmethod
+    def get_show_system_databases(cls):
+        """Get whether system databases should be shown
+        
+        Returns:
+            Boolean indicating whether to show system databases
+        """
+        return cls._show_system_databases
     
     def _get_config_dir(self):
         """Get the configuration directory for the application"""

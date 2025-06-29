@@ -23,6 +23,7 @@ class ConnectionTab(QWidget):
         super().__init__(parent)
         
         self.connection = connection
+        self.database_manager_dialog = None
         self._create_ui()
         
         # Connect to the database browser's signals

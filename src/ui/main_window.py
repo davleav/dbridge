@@ -99,6 +99,15 @@ class MainWindow(QMainWindow):
         if edit_menu is None:
             pass  # Skip edit menu if it's None
         else:
+            # Add "Show System Databases" option
+            self.show_system_db_action = QAction("Show System Databases", self)
+            self.show_system_db_action.setCheckable(True)
+            self.show_system_db_action.setChecked(self.connection_manager.get_show_system_databases())
+            self.show_system_db_action.triggered.connect(self._toggle_system_databases)
+            edit_menu.addAction(self.show_system_db_action)
+            
+            edit_menu.addSeparator()
+            
             # Add theme submenu
             theme_menu = QMenu("Theme", self)
             edit_menu.addMenu(theme_menu)
@@ -766,8 +775,15 @@ class MainWindow(QMainWindow):
         
         # Create and show the database manager dialog
         # We already have the connection from getattr above
-        dialog = DatabaseManagerDialog(connection, self)
-        dialog.exec()
+        if not hasattr(current_tab, 'database_manager_dialog'):
+            current_tab.database_manager_dialog = None
+            
+        # Create a new dialog or reuse the existing one
+        if current_tab.database_manager_dialog is None:
+            current_tab.database_manager_dialog = DatabaseManagerDialog(connection, self)
+            
+        # Show the dialog
+        current_tab.database_manager_dialog.exec()
         
         # Refresh the database browser if it's visible
         if current_tab is not None and hasattr(current_tab, 'database_browser'):
@@ -873,6 +889,91 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Database Browser", "Database browser not available in this tab.")
     
     # _tab_changed method has been merged with the one at line 442
+    
+    def _toggle_system_databases(self, checked):
+        """Toggle the visibility of system databases application-wide"""
+        # Set the global setting - this will emit the signal to all listeners
+        self.connection_manager.set_show_system_databases(checked)
+        
+        # Show a message in the status bar
+        if checked:
+            self.status_bar.showMessage("System databases are now visible", 3000)
+        else:
+            self.status_bar.showMessage("System databases are now hidden", 3000)
+    
+    def _force_refresh_database_views(self):
+        """Force refresh all open database views to reflect the system database setting"""
+        # Refresh all tabs, not just the current one
+        for i in range(self.connection_tabs.count()):
+            tab = self.connection_tabs.widget(i)
+            
+            # Skip the welcome tab
+            if self.connection_tabs.tabText(i) == "Welcome":
+                continue
+                
+            # If it's a connection tab, force refresh its database browser
+            if hasattr(tab, 'database_browser'):
+                # Directly call the _refresh_databases method if it exists
+                if hasattr(tab.database_browser, '_refresh_databases'):
+                    tab.database_browser._refresh_databases()
+                # Otherwise fall back to refreshing the tree model
+                elif hasattr(tab.database_browser, 'tree_model'):
+                    tab.database_browser.tree_model.refresh()
+                    
+                    # Expand the database node to show available databases
+                    if tab.database_browser.tree_model.rowCount() > 0:
+                        root_index = tab.database_browser.tree_model.index(0, 0)
+                        tab.database_browser.tree_view.expand(root_index)
+                        
+                        # If there's a "Available Databases" folder, expand it too
+                        for row in range(tab.database_browser.tree_model.rowCount(root_index)):
+                            child_index = tab.database_browser.tree_model.index(row, 0, root_index)
+                            item_type = tab.database_browser.tree_model.data(child_index, Qt.ItemDataRole.UserRole)
+                            if item_type == "databases_folder":
+                                tab.database_browser.tree_view.expand(child_index)
+                                break
+            
+            # Also refresh any open database manager dialogs
+            if hasattr(tab, 'database_manager_dialog') and tab.database_manager_dialog is not None:
+                if tab.database_manager_dialog.isVisible():
+                    tab.database_manager_dialog._populate_databases()
+                    tab.database_manager_dialog._populate_db_selector()
+    
+    def _refresh_database_views(self):
+        """Refresh all open database views to reflect the system database setting"""
+        # This is a less aggressive refresh that doesn't directly call methods
+        # Refresh all tabs, not just the current one
+        for i in range(self.connection_tabs.count()):
+            tab = self.connection_tabs.widget(i)
+            
+            # Skip the welcome tab
+            if self.connection_tabs.tabText(i) == "Welcome":
+                continue
+                
+            # If it's a connection tab, refresh its database browser
+            if hasattr(tab, 'database_browser'):
+                if hasattr(tab.database_browser, 'tree_model'):
+                    # Refresh the tree model
+                    tab.database_browser.tree_model.refresh()
+                    
+                    # Expand the database node to show available databases
+                    if tab.database_browser.tree_model.rowCount() > 0:
+                        root_index = tab.database_browser.tree_model.index(0, 0)
+                        tab.database_browser.tree_view.expand(root_index)
+                        
+                        # If there's a "Available Databases" folder, expand it too
+                        for row in range(tab.database_browser.tree_model.rowCount(root_index)):
+                            child_index = tab.database_browser.tree_model.index(row, 0, root_index)
+                            item_type = tab.database_browser.tree_model.data(child_index, Qt.ItemDataRole.UserRole)
+                            if item_type == "databases_folder":
+                                tab.database_browser.tree_view.expand(child_index)
+                                break
+            
+            # Also refresh any open database manager dialogs
+            if hasattr(tab, 'database_manager_dialog') and tab.database_manager_dialog is not None:
+                if tab.database_manager_dialog.isVisible():
+                    tab.database_manager_dialog._populate_databases()
+                    tab.database_manager_dialog._populate_db_selector()
     
     def _change_theme(self, theme_name):
         """Change the application theme"""

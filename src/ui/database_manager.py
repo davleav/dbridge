@@ -6,8 +6,9 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget, QPushButton,
     QListWidget, QLabel, QComboBox, QTableWidget, QTableWidgetItem,
     QCheckBox, QLineEdit, QMessageBox, QInputDialog, QDialogButtonBox,
-    QGroupBox, QFormLayout, QSplitter
+    QGroupBox, QFormLayout, QSplitter, QMenuBar, QMenu
 )
+from PyQt6.QtGui import QAction
 from PyQt6.QtCore import Qt, pyqtSignal
 import sys
 from typing import Dict, Any, Union, Optional, List, cast
@@ -117,6 +118,8 @@ class DatabaseManagerDialog(QDialog):
     def _create_ui(self):
         """Create the UI components"""
         layout = QVBoxLayout(self)
+        
+
         
         # Create tab widget
         self.tabs = QTabWidget()
@@ -319,6 +322,11 @@ class DatabaseManagerDialog(QDialog):
         
         try:
             databases = self.connection.get_available_databases()
+            
+            # Filter out system databases if the option is disabled
+            if not self.connection.connection_manager.get_show_system_databases():
+                databases = [db for db in databases if not self.connection.is_system_database(db)]
+                
             for db in databases:
                 self.database_tab.databases_list.addItem(db)
                 
@@ -338,11 +346,17 @@ class DatabaseManagerDialog(QDialog):
         
         try:
             databases = self.connection.get_available_databases()
+            
+            # Filter out system databases if the option is disabled
+            if not self.connection.connection_manager.get_show_system_databases():
+                databases = [db for db in databases if not self.connection.is_system_database(db)]
+                
             self.tables_tab.db_selector.addItems(databases)
             
             # Set the current database if one is selected
             current_db = self.connection.get_database_name()
             if current_db != "(No database selected)":
+                # Only select the current database if it's in the list (might be filtered out if it's a system database)
                 index = self.tables_tab.db_selector.findText(current_db)
                 if index >= 0:
                     # Temporarily disconnect the signal to avoid triggering _on_tables_db_changed
@@ -649,8 +663,7 @@ class DatabaseManagerDialog(QDialog):
         self.indexes_tab.create_index_button.clicked.connect(self._create_index)
         self.indexes_tab.drop_index_button.clicked.connect(self._drop_index)
         
-        # Tab widget
-        self.tabs.currentChanged.connect(self._on_tab_changed)
+
     
     def _create_database(self):
         """Create a new database"""
@@ -1334,6 +1347,12 @@ class DatabaseManagerDialog(QDialog):
         if selected_items:
             selected_db = selected_items[0].text()
             
+            # Check if this is a system database and if system databases are hidden
+            is_system_db = self.connection.is_system_database(selected_db)
+            if is_system_db and not self._show_system_databases:
+                # This shouldn't normally happen, but just in case
+                return
+                
             # Update the database selector in the tables tab
             index = self.tables_tab.db_selector.findText(selected_db)
             if index >= 0:
@@ -1345,6 +1364,12 @@ class DatabaseManagerDialog(QDialog):
         """Handle database double-click in the database tab"""
         selected_db = item.text()
         
+        # Check if this is a system database and if system databases are hidden
+        is_system_db = self.connection.is_system_database(selected_db)
+        if is_system_db and not self._show_system_databases:
+            # This shouldn't normally happen, but just in case
+            return
+            
         # Update the database selector in the tables tab
         index = self.tables_tab.db_selector.findText(selected_db)
         if index >= 0:
@@ -1356,6 +1381,15 @@ class DatabaseManagerDialog(QDialog):
     def _on_tables_db_changed(self, database_name):
         """Handle database selection change in the tables tab"""
         if database_name:
+            # Check if this is a system database and if system databases are hidden
+            is_system_db = self.connection.is_system_database(database_name)
+            if is_system_db and not self._show_system_databases:
+                # Clear tables list if a system database is selected but they're hidden
+                self.tables_tab.tables_list.clear()
+                self.columns_tab.table_selector.clear()
+                self.indexes_tab.table_selector.clear()
+                return
+                
             # Populate tables for the selected database
             self._populate_tables(database_name)
             

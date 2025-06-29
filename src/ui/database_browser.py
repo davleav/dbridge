@@ -8,7 +8,8 @@ import subprocess
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTreeView, QMenu,
     QInputDialog, QMessageBox, QFileDialog,
-    QPushButton, QHBoxLayout, QFrame, QLabel, QListWidget
+    QPushButton, QHBoxLayout, QFrame, QLabel, QListWidget,
+    QCheckBox
 )
 from PyQt6.QtGui import QAction
 from PyQt6.QtCore import Qt, QAbstractItemModel, QModelIndex, pyqtSignal
@@ -67,6 +68,11 @@ class DatabaseTreeModel(QStandardItemModel):
             # Get available databases
             try:
                 databases = self.connection.get_available_databases()
+                
+                # Filter out system databases if the option is disabled
+                if not self.connection.connection_manager.get_show_system_databases():
+                    databases = [db for db in databases if not self.connection.is_system_database(db)]
+                    
                 for db in databases:
                     db_item_child = QStandardItem(db)
                     db_item_child.setData("available_database", Qt.ItemDataRole.UserRole)
@@ -276,6 +282,17 @@ class DatabaseBrowser(QWidget):
             # If not, recreate the model as a DatabaseTreeModel
             self.tree_model = DatabaseTreeModel(self)
             self.tree_view.setModel(self.tree_model)
+        
+        # Connect to the system_databases_visibility_changed signal if the connection has a connection_manager
+        if connection is not None and hasattr(connection, 'connection_manager'):
+            # Disconnect any existing connections to avoid duplicates
+            try:
+                connection.connection_manager.system_databases_visibility_changed.disconnect(self._on_system_databases_visibility_changed)
+            except:
+                pass  # Ignore if there was no connection
+                
+            # Connect to the signal
+            connection.connection_manager.system_databases_visibility_changed.connect(self._on_system_databases_visibility_changed)
         
         # Now set the connection
         self.tree_model.set_connection(connection)
@@ -629,6 +646,12 @@ class DatabaseBrowser(QWidget):
                     if widget:
                         widget.show()
     
+
+    def _on_system_databases_visibility_changed(self, show):
+        """Handler for when the system database visibility changes"""
+        # Force a refresh of the database tree
+        self._refresh_databases()
+        
     def _refresh_databases(self):
         """Refresh the list of available databases"""
         if not hasattr(self.tree_model, 'connection') or not self.tree_model.connection:
