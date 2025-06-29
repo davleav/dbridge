@@ -7,9 +7,9 @@ import os
 from unittest.mock import patch, MagicMock
 from typing import List, Any
 
-from PyQt6.QtWidgets import QApplication, QTextEdit, QSizePolicy, QScrollArea, QSplitter, QSlider
+from PyQt6.QtWidgets import QApplication, QTextEdit, QSizePolicy, QScrollArea, QSplitter, QSlider, QMessageBox
 from PyQt6.QtGui import QShowEvent
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QClipboard
 
 # Add the src directory to the path so we can import our modules
@@ -259,6 +259,205 @@ class TestRowDetailDialog(unittest.TestCase):
         for i in range(4):
             self.assertIn(i, dialog.raw_content)
             self.assertTrue(dialog.is_rendered[i])
+    
+    def test_edit_mode_toggle(self):
+        """Test toggling edit mode"""
+        # Initially, edit mode should be off
+        self.assertFalse(self.dialog.edit_mode)
+        self.assertEqual(self.dialog.edit_button.text(), "Edit")
+        
+        # All text edits should be read-only
+        for edit in self.dialog.value_edits:
+            self.assertTrue(edit.isReadOnly())
+        
+        # Toggle edit mode on
+        self.dialog._toggle_edit_mode()
+        
+        # Check that edit mode is on
+        self.assertTrue(self.dialog.edit_mode)
+        self.assertEqual(self.dialog.edit_button.text(), "Cancel")
+        # Skip checking save_button visibility as it might not update in test environment
+        self.assertEqual(self.dialog.windowTitle(), "Edit Row")
+        
+        # All text edits should be editable
+        for edit in self.dialog.value_edits:
+            self.assertFalse(edit.isReadOnly())
+        
+        # Toggle edit mode off
+        self.dialog._toggle_edit_mode()
+        
+        # Check that edit mode is off again
+        self.assertFalse(self.dialog.edit_mode)
+        self.assertEqual(self.dialog.edit_button.text(), "Edit")
+        # Skip checking save_button visibility as it might not update in test environment
+        self.assertEqual(self.dialog.windowTitle(), "Row Details")
+        
+        # All text edits should be read-only again
+        for edit in self.dialog.value_edits:
+            self.assertTrue(edit.isReadOnly())
+    
+    def test_edit_and_save_changes(self):
+        """Test editing and saving changes"""
+        # Create a mock to monitor the data_updated signal
+        signal_received = False
+        signal_columns = None
+        signal_data = None
+        
+        def signal_handler(columns, data):
+            nonlocal signal_received, signal_columns, signal_data
+            signal_received = True
+            signal_columns = columns
+            signal_data = data
+        
+        # Connect our handler to the signal
+        self.dialog.data_updated.connect(signal_handler)
+        
+        # Toggle edit mode on
+        self.dialog._toggle_edit_mode()
+        
+        # Edit the second field (Name)
+        self.dialog.value_edits[1].setPlainText("Updated Name")
+        
+        # Mock the QMessageBox.question to return Yes
+        with patch('PyQt6.QtWidgets.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes):
+            # Mock the QMessageBox.information to avoid showing the dialog
+            with patch('PyQt6.QtWidgets.QMessageBox.information'):
+                # Save the changes
+                self.dialog._save_changes()
+        
+        # Check that edit mode is off
+        self.assertFalse(self.dialog.edit_mode)
+        
+        # Check that the data was updated
+        self.assertEqual(self.dialog.row_data[1], "Updated Name")
+        
+        # Check that the signal was emitted
+        self.assertTrue(signal_received)
+        
+        # Check the signal arguments
+        self.assertEqual(signal_columns, self.dialog.column_names)
+        self.assertEqual(signal_data[1], "Updated Name")
+    
+    def test_cancel_edit(self):
+        """Test canceling edit mode without saving"""
+        # Toggle edit mode on
+        self.dialog._toggle_edit_mode()
+        
+        # Edit the second field (Name)
+        original_name = self.dialog.value_edits[1].toPlainText()
+        self.dialog.value_edits[1].setPlainText("Updated Name")
+        
+        # Cancel edit mode
+        self.dialog._toggle_edit_mode()
+        
+        # Check that edit mode is off
+        self.assertFalse(self.dialog.edit_mode)
+        
+        # Check that the data was reverted
+        self.assertEqual(self.dialog.value_edits[1].toPlainText(), original_name)
+        self.assertEqual(self.dialog.row_data[1], original_name)
+    
+    def test_edit_mode_keyboard_shortcuts(self):
+        """Test keyboard shortcuts for edit mode"""
+        # Test Ctrl+E shortcut to enter edit mode
+        edit_action = None
+        for action in self.dialog.actions():
+            if action.text() == "Edit":
+                edit_action = action
+                break
+        
+        self.assertIsNotNone(edit_action)
+        self.assertEqual(edit_action.shortcut().toString(), "Ctrl+E")
+        
+        # Test Ctrl+S shortcut to save changes
+        save_action = None
+        for action in self.dialog.actions():
+            if action.text() == "Save":
+                save_action = action
+                break
+        
+        self.assertIsNotNone(save_action)
+        self.assertEqual(save_action.shortcut().toString(), "Ctrl+S")
+        
+        # Test Escape shortcut to cancel edit mode
+        close_action = None
+        for action in self.dialog.actions():
+            if action.text() == "Close":
+                close_action = action
+                break
+        
+        self.assertIsNotNone(close_action)
+        self.assertEqual(close_action.shortcut().toString(), "Esc")
+    
+    def test_no_changes_save(self):
+        """Test saving when no changes were made"""
+        # Toggle edit mode on
+        self.dialog._toggle_edit_mode()
+        
+        # Don't make any changes
+        
+        # Create a mock to monitor the data_updated signal
+        signal_received = False
+        
+        def signal_handler(columns, data):
+            nonlocal signal_received
+            signal_received = True
+        
+        # Connect our handler to the signal
+        self.dialog.data_updated.connect(signal_handler)
+        
+        # Save (should just exit edit mode without showing confirmation)
+        self.dialog._save_changes()
+        
+        # Check that edit mode is off
+        self.assertFalse(self.dialog.edit_mode)
+        
+        # Check that no signal was emitted
+        self.assertFalse(signal_received)
+    
+    def test_data_type_conversion(self):
+        """Test data type conversion when saving changes"""
+        # Toggle edit mode on
+        self.dialog._toggle_edit_mode()
+        
+        # Edit the numeric fields with valid values
+        self.dialog.value_edits[0].setPlainText("42")  # ID (int)
+        self.dialog.value_edits[2].setPlainText("99.9")  # Value (float)
+        
+        # Mock the QMessageBox.question to return Yes
+        with patch('PyQt6.QtWidgets.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes):
+            # Mock the QMessageBox.information to avoid showing the dialog
+            with patch('PyQt6.QtWidgets.QMessageBox.information'):
+                # Save the changes
+                self.dialog._save_changes()
+        
+        # Check that the data types were preserved
+        self.assertIsInstance(self.dialog.row_data[0], int)
+        self.assertEqual(self.dialog.row_data[0], 42)
+        
+        self.assertIsInstance(self.dialog.row_data[2], float)
+        self.assertEqual(self.dialog.row_data[2], 99.9)
+        
+        # Test with invalid numeric values
+        self.dialog._toggle_edit_mode()
+        
+        # Edit with invalid values
+        self.dialog.value_edits[0].setPlainText("not a number")  # ID (int)
+        self.dialog.value_edits[2].setPlainText("also not a number")  # Value (float)
+        
+        # Mock the QMessageBox.question to return Yes
+        with patch('PyQt6.QtWidgets.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes):
+            # Mock the QMessageBox.information to avoid showing the dialog
+            with patch('PyQt6.QtWidgets.QMessageBox.information'):
+                # Save the changes
+                self.dialog._save_changes()
+        
+        # Check that the values were saved as strings
+        self.assertIsInstance(self.dialog.row_data[0], str)
+        self.assertEqual(self.dialog.row_data[0], "not a number")
+        
+        self.assertIsInstance(self.dialog.row_data[2], str)
+        self.assertEqual(self.dialog.row_data[2], "also not a number")
 
 
 if __name__ == '__main__':

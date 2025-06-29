@@ -1,19 +1,23 @@
 """
-Dialog for displaying detailed row data in a list format
+Dialog for displaying detailed row data in a list format with optional edit mode
 """
 
 import re
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QWidget, QFormLayout, QTextEdit, QDialogButtonBox,
-    QApplication, QSizePolicy, QSplitter, QSlider, QFrame, QToolButton
+    QApplication, QSizePolicy, QSplitter, QSlider, QFrame, QToolButton,
+    QMessageBox
 )
-from PyQt6.QtCore import Qt, QSize, QEvent
+from PyQt6.QtCore import Qt, QSize, QEvent, pyqtSignal
 from PyQt6.QtGui import QFont, QAction, QKeySequence, QIcon, QPalette
 from PyQt6.QtGui import QShowEvent
 
 class RowDetailDialog(QDialog):
-    """Dialog for displaying detailed row data in a list format"""
+    """Dialog for displaying detailed row data in a list format with optional edit mode"""
+    
+    # Signal emitted when data is edited and saved
+    data_updated = pyqtSignal(list, list)
     
     def __init__(self, row_data, column_names, parent=None):
         """
@@ -31,6 +35,8 @@ class RowDetailDialog(QDialog):
         self.value_edits = []  # Store references to value editors
         self.raw_content = {}  # Store raw content for toggling
         self.is_rendered = {}  # Track rendering state for each field
+        self.edit_mode = False  # Track whether we're in edit mode
+        self.original_data = row_data.copy()  # Store original data for comparison
         
         self.setWindowTitle("Row Details")
         self.resize(700, 600)  # Set a reasonable default size
@@ -211,8 +217,9 @@ class RowDetailDialog(QDialog):
             
             # Create a text edit for the value
             value_edit = QTextEdit()
-            value_edit.setReadOnly(True)
+            value_edit.setReadOnly(True)  # Initially read-only, will be toggled in edit mode
             value_edit.setProperty("column_name", column)  # Store column name for reference
+            value_edit.setProperty("column_index", i)  # Store column index for reference
             
             # Configure the text edit
             value_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -440,21 +447,32 @@ class RowDetailDialog(QDialog):
         copy_all_button.clicked.connect(self._copy_all_data)
         button_layout.addWidget(copy_all_button)
         
+        # Edit mode toggle button
+        self.edit_button = QPushButton("Edit")
+        self.edit_button.clicked.connect(self._toggle_edit_mode)
+        button_layout.addWidget(self.edit_button)
+        
+        # Save button (initially hidden)
+        self.save_button = QPushButton("Save")
+        self.save_button.clicked.connect(self._save_changes)
+        self.save_button.setVisible(False)
+        button_layout.addWidget(self.save_button)
+        
         button_layout.addStretch()
         
         # Close button
-        close_button = QPushButton("Close")
-        close_button.clicked.connect(self.accept)
-        button_layout.addWidget(close_button)
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.accept)
+        button_layout.addWidget(self.close_button)
         
         layout.addLayout(button_layout)
     
     def _setup_shortcuts(self):
         """Set up keyboard shortcuts"""
-        # Escape key to close the dialog
+        # Escape key to close the dialog or cancel edit mode
         close_action = QAction("Close", self)
         close_action.setShortcut(QKeySequence.StandardKey.Cancel)
-        close_action.triggered.connect(self.accept)
+        close_action.triggered.connect(self._handle_escape)
         self.addAction(close_action)
         
         # Ctrl+C to copy selected text
@@ -468,6 +486,33 @@ class RowDetailDialog(QDialog):
         copy_all_action.setShortcut(QKeySequence("Ctrl+Shift+C"))
         copy_all_action.triggered.connect(self._copy_all_data)
         self.addAction(copy_all_action)
+        
+        # Ctrl+E to toggle edit mode
+        edit_action = QAction("Edit", self)
+        edit_action.setShortcut(QKeySequence("Ctrl+E"))
+        edit_action.triggered.connect(self._toggle_edit_mode)
+        self.addAction(edit_action)
+        
+        # Ctrl+S to save changes in edit mode
+        save_action = QAction("Save", self)
+        save_action.setShortcut(QKeySequence.StandardKey.Save)
+        save_action.triggered.connect(self._handle_save_shortcut)
+        self.addAction(save_action)
+    
+    def _handle_escape(self):
+        """Handle the Escape key press"""
+        if self.edit_mode:
+            # If in edit mode, cancel editing
+            self._toggle_edit_mode()
+        else:
+            # Otherwise, close the dialog
+            self.accept()
+    
+    def _handle_save_shortcut(self):
+        """Handle the Ctrl+S shortcut"""
+        if self.edit_mode:
+            # Only save if in edit mode
+            self._save_changes()
     
     def _show_context_menu(self, pos, edit):
         """Show context menu for a text edit"""
@@ -500,6 +545,26 @@ class RowDetailDialog(QDialog):
                     
                 toggle_action.triggered.connect(lambda: self._toggle_rendering(index))
                 menu.addAction(toggle_action)
+            
+            # Add edit options
+            menu.addSeparator()
+            
+            if not self.edit_mode:
+                # Add option to edit this field
+                edit_action = QAction("Edit This Field", self)
+                edit_action.triggered.connect(self._toggle_edit_mode)
+                menu.addAction(edit_action)
+            else:
+                # Add option to save changes
+                save_action = QAction("Save Changes", self)
+                save_action.triggered.connect(self._save_changes)
+                menu.addAction(save_action)
+                
+                # Add option to cancel editing
+                cancel_action = QAction("Cancel Editing", self)
+                cancel_action.triggered.connect(self._toggle_edit_mode)
+                menu.addAction(cancel_action)
+                
         except ValueError:
             # Edit not found in value_edits list
             pass
@@ -571,6 +636,174 @@ class RowDetailDialog(QDialog):
         # Call the parent class implementation
         super().changeEvent(event)
         
+    def _toggle_edit_mode(self):
+        """Toggle between read-only and edit mode"""
+        self.edit_mode = not self.edit_mode
+        
+        if self.edit_mode:
+            # Switch to edit mode
+            self.edit_button.setText("Cancel")
+            self.save_button.setVisible(True)
+            self.setWindowTitle("Edit Row")
+            
+            # Make text edits editable
+            for i, value_edit in enumerate(self.value_edits):
+                # Don't make rendered HTML/Markdown editable in rendered view
+                if i in self.is_rendered and self.is_rendered[i]:
+                    # Switch to raw view for editing
+                    self._toggle_rendering(i)
+                
+                value_edit.setReadOnly(False)
+                
+                # Apply editable styling
+                self._apply_edit_mode_styling(value_edit, True)
+        else:
+            # Switch back to view mode
+            self.edit_button.setText("Edit")
+            self.save_button.setVisible(False)
+            self.setWindowTitle("Row Details")
+            
+            # Revert changes and make text edits read-only again
+            for i, (value_edit, original_value) in enumerate(zip(self.value_edits, self.original_data)):
+                value_edit.setReadOnly(True)
+                
+                # Reset to original value
+                if original_value is None:
+                    value_str = "NULL"
+                else:
+                    value_str = str(original_value)
+                
+                # If this field has formatting and is in raw view, restore the rendered view
+                if i in self.is_rendered and not self.is_rendered[i]:
+                    self._toggle_rendering(i)
+                elif i in self.is_rendered:
+                    # Already in rendered view, just update the content
+                    value_edit.setHtml(value_str)
+                else:
+                    # Plain text field
+                    value_edit.setPlainText(value_str)
+                
+                # Apply read-only styling
+                self._apply_edit_mode_styling(value_edit, False)
+    
+    def _apply_edit_mode_styling(self, value_edit, is_edit_mode):
+        """Apply styling based on edit mode"""
+        app = QApplication.instance()
+        if not app:
+            return
+            
+        palette = app.palette()
+        is_dark_theme = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        
+        if is_edit_mode:
+            # Editable styling
+            if is_dark_theme:
+                value_edit.setStyleSheet("""
+                    QTextEdit {
+                        border: 1px solid #777;
+                        border-radius: 2px;
+                        background-color: #333333;
+                        color: #FFFFFF;
+                    }
+                """)
+            else:
+                value_edit.setStyleSheet("""
+                    QTextEdit {
+                        border: 1px solid #777;
+                        border-radius: 2px;
+                        background-color: #FFFFFF;
+                    }
+                """)
+        else:
+            # Read-only styling
+            if is_dark_theme:
+                value_edit.setStyleSheet("""
+                    QTextEdit {
+                        border: 1px solid #555;
+                        border-radius: 2px;
+                        background-color: #252525;
+                        color: #FFFFFF;
+                    }
+                """)
+            else:
+                value_edit.setStyleSheet("""
+                    QTextEdit {
+                        border: 1px solid #999;
+                        border-radius: 2px;
+                        background-color: #f8f8f8;
+                    }
+                """)
+    
+    def _save_changes(self):
+        """Save the changes made in edit mode"""
+        # Collect the updated values
+        updated_data = []
+        
+        for value_edit in self.value_edits:
+            text = value_edit.toPlainText()
+            
+            # Convert "NULL" string back to None
+            if text == "NULL":
+                updated_data.append(None)
+            else:
+                # Try to convert to original type if possible
+                index = value_edit.property("column_index")
+                original_value = self.original_data[index]
+                
+                if original_value is None:
+                    updated_data.append(text)
+                elif isinstance(original_value, int):
+                    try:
+                        updated_data.append(int(text))
+                    except ValueError:
+                        updated_data.append(text)
+                elif isinstance(original_value, float):
+                    try:
+                        updated_data.append(float(text))
+                    except ValueError:
+                        updated_data.append(text)
+                else:
+                    updated_data.append(text)
+        
+        # Check if anything changed
+        if updated_data == self.original_data:
+            # No changes, just exit edit mode
+            self._toggle_edit_mode()
+            return
+        
+        # Confirm save
+        reply = QMessageBox.question(
+            self, 
+            "Save Changes",
+            "Save changes to this row?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Update the row_data
+            self.row_data = updated_data
+            
+            # Emit signal with the updated data
+            self.data_updated.emit(self.column_names, updated_data)
+            
+            # Update original data to reflect the changes
+            self.original_data = updated_data.copy()
+            
+            # Exit edit mode
+            self._toggle_edit_mode()
+            
+            # Show confirmation
+            QMessageBox.information(
+                self,
+                "Success",
+                "Row data has been updated successfully.",
+                QMessageBox.StandardButton.Ok
+            )
+        else:
+            # User canceled, stay in edit mode
+            pass
+    
     def _update_theme_styling(self):
         """Update styling for all widgets based on the current theme"""
         app = QApplication.instance()
@@ -582,25 +815,8 @@ class RowDetailDialog(QDialog):
         
         # Update all text edits
         for value_edit in self.value_edits:
-            if is_dark_theme:
-                # Dark theme styling
-                value_edit.setStyleSheet("""
-                    QTextEdit {
-                        border: 1px solid #555;
-                        border-radius: 2px;
-                        background-color: #252525;
-                        color: #FFFFFF;
-                    }
-                """)
-            else:
-                # Light theme styling
-                value_edit.setStyleSheet("""
-                    QTextEdit {
-                        border: 1px solid #999;
-                        border-radius: 2px;
-                        background-color: #f8f8f8;
-                    }
-                """)
+            # Apply appropriate styling based on edit mode
+            self._apply_edit_mode_styling(value_edit, not value_edit.isReadOnly())
         
         # Update all toggle buttons
         for i in range(len(self.value_edits)):

@@ -165,7 +165,78 @@ class ResultsView(QWidget):
         
         # Create and show the detail dialog
         dialog = RowDetailDialog(row_data, column_names, self)
+        
+        # Connect the data_updated signal to handle updates
+        dialog.data_updated.connect(lambda columns, data: self._update_row_data(row_index, columns, data))
+        
         dialog.exec()
+    
+    def _update_row_data(self, row_index, columns, data):
+        """
+        Update the row data in the table model
+        
+        Args:
+            row_index: Index of the row to update
+            columns: List of column names
+            data: List of updated values
+        """
+        if row_index < 0 or row_index >= self.table_model.rowCount():
+            return
+            
+        # Update the data in the pandas DataFrame
+        for col_idx, (col_name, value) in enumerate(zip(columns, data)):
+            # Find the column index in the DataFrame
+            if col_name in self.table_model._data.columns:
+                self.table_model._data.iloc[row_index, col_idx] = value
+        
+        # Notify the model that data has changed
+        top_left = self.table_model.index(row_index, 0)
+        bottom_right = self.table_model.index(row_index, self.table_model.columnCount() - 1)
+        self.table_model.dataChanged.emit(top_left, bottom_right)
+        
+        # If we have a connection, update the database
+        if hasattr(self, 'connection') and self.connection is not None:
+            self._update_database_row(row_index, columns, data)
+    
+    def _update_database_row(self, row_index, columns, data):
+        """
+        Update the row in the database
+        
+        Args:
+            row_index: Index of the row to update
+            columns: List of column names
+            data: List of updated values
+        """
+        # This method would need to be implemented based on your database structure
+        # and how you're executing queries. For now, we'll just log a message.
+        print(f"Database update would happen here for row {row_index}")
+        print(f"Columns: {columns}")
+        print(f"Data: {data}")
+        
+        # In a real implementation, you would:
+        # 1. Get the table name and primary key
+        # 2. Build an UPDATE SQL statement
+        # 3. Execute the statement with the connection
+        
+        # Example (pseudocode):
+        # table_name = self.current_table
+        # primary_key_col = self.get_primary_key_column(table_name)
+        # primary_key_val = self.get_primary_key_value(row_index)
+        # 
+        # update_cols = []
+        # update_vals = []
+        # for col, val in zip(columns, data):
+        #     if col != primary_key_col:  # Don't update the primary key
+        #         update_cols.append(col)
+        #         update_vals.append(val)
+        # 
+        # sql = f"UPDATE {table_name} SET "
+        # sql += ", ".join([f"{col} = ?" for col in update_cols])
+        # sql += f" WHERE {primary_key_col} = ?"
+        # 
+        # params = update_vals + [primary_key_val]
+        # self.connection.execute(sql, params)
+        # self.connection.commit()
     
     def _export_data(self):
         """Export the results data to a file"""

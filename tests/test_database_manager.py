@@ -50,6 +50,12 @@ class TestDatabaseManagerDialog(unittest.TestCase):
             {"name": "idx_id", "columns": ["id"]}
         ]
         
+        # Mock permission methods to return True
+        self.mock_connection.can_drop_database.return_value = True
+        self.mock_connection.can_create_database.return_value = True
+        self.mock_connection.is_system_database.return_value = False
+        self.mock_connection.is_admin.return_value = True
+        
         # Create the dialog with the mock connection
         self.dialog = DatabaseManagerDialog(self.mock_connection)
     

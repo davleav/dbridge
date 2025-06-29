@@ -186,6 +186,9 @@ class TestResultsView(unittest.TestCase):
         self.assertEqual(args[1][1], 'name')
         self.assertEqual(args[1][2], 'value')
         
+        # Check that the data_updated signal is connected
+        self.assertEqual(mock_dialog_instance.data_updated.connect.call_count, 1)
+        
         # Check that the dialog's exec method was called
         mock_dialog_instance.exec.assert_called_once()
         
@@ -256,6 +259,49 @@ class TestResultsView(unittest.TestCase):
         
         # The dialog should not be created
         mock_dialog.assert_not_called()
+    
+    def test_update_row_data(self):
+        """Test updating row data from the row detail dialog"""
+        # Set the test data
+        self.results_view.set_data(self.test_data)
+        
+        # Define the row index and updated data
+        row_index = 1
+        columns = ['id', 'name', 'value']
+        updated_data = [2, 'Updated Name', 20.5]
+        
+        # Mock the dataChanged signal
+        with patch.object(self.results_view.table_model, 'dataChanged') as mock_data_changed:
+            # Call the update method
+            self.results_view._update_row_data(row_index, columns, updated_data)
+            
+            # Check that the data was updated in the model
+            self.assertEqual(self.results_view.table_model._data.iloc[row_index, 0], 2)
+            self.assertEqual(self.results_view.table_model._data.iloc[row_index, 1], 'Updated Name')
+            self.assertEqual(self.results_view.table_model._data.iloc[row_index, 2], 20.5)
+            
+            # Check that the dataChanged signal was emitted
+            mock_data_changed.emit.assert_called_once()
+    
+    def test_update_database_row(self):
+        """Test the database update method"""
+        # Set the test data
+        self.results_view.set_data(self.test_data)
+        
+        # Define the row index and updated data
+        row_index = 1
+        columns = ['id', 'name', 'value']
+        updated_data = [2, 'Updated Name', 20.5]
+        
+        # Mock print to check the output
+        with patch('builtins.print') as mock_print:
+            # Call the update method
+            self.results_view._update_database_row(row_index, columns, updated_data)
+            
+            # Check that the print statements were called with the correct data
+            mock_print.assert_any_call(f"Database update would happen here for row {row_index}")
+            mock_print.assert_any_call(f"Columns: {columns}")
+            mock_print.assert_any_call(f"Data: {updated_data}")
     
     def test_export_data(self):
         """Test exporting data to a file"""
