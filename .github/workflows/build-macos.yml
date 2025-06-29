@@ -1,0 +1,88 @@
+name: Build macOS DMG
+
+on:
+  push:
+    tags:
+      - 'v*'  # Run workflow on version tags, e.g. v0.8.1
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pillow py2app
+          
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="dev-$(date +'%Y%m%d')"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+      - name: Create icon in ICNS format
+        run: |
+          mkdir -p icon.iconset
+          sips -z 16 16 DBridge.png --out icon.iconset/icon_16x16.png
+          sips -z 32 32 DBridge.png --out icon.iconset/icon_16x16@2x.png
+          sips -z 32 32 DBridge.png --out icon.iconset/icon_32x32.png
+          sips -z 64 64 DBridge.png --out icon.iconset/icon_32x32@2x.png
+          sips -z 128 128 DBridge.png --out icon.iconset/icon_128x128.png
+          sips -z 256 256 DBridge.png --out icon.iconset/icon_128x128@2x.png
+          sips -z 256 256 DBridge.png --out icon.iconset/icon_256x256.png
+          sips -z 512 512 DBridge.png --out icon.iconset/icon_256x256@2x.png
+          sips -z 512 512 DBridge.png --out icon.iconset/icon_512x512.png
+          sips -z 1024 1024 DBridge.png --out icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o DBridge.icns
+          
+      - name: Update version in spec file
+        run: |
+          # Update version in the spec file
+          sed -i '' "s/'CFBundleShortVersionString': '.*'/'CFBundleShortVersionString': '$VERSION'/g" dbridge_macos.spec
+          sed -i '' "s/'CFBundleVersion': '.*'/'CFBundleVersion': '$VERSION'/g" dbridge_macos.spec
+          
+      - name: Build macOS application
+        run: |
+          pyinstaller --noconfirm dbridge_macos.spec
+          
+      - name: Create DMG installer
+        run: |
+          mkdir -p dist/dmg
+          cp -R "dist/DBridge.app" dist/dmg/
+          ln -s /Applications dist/dmg/
+          hdiutil create -volname "DBridge $VERSION" -srcfolder dist/dmg -ov -format UDZO "dist/DBridge-$VERSION.dmg"
+          
+      - name: Upload DMG as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: macos-dmg
+          path: dist/DBridge-${{ env.VERSION }}.dmg
+          
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: dist/DBridge-${{ env.VERSION }}.dmg
+          name: DBridge v${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
