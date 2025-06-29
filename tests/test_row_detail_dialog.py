@@ -336,7 +336,10 @@ class TestRowDetailDialog(unittest.TestCase):
         
         # Check the signal arguments
         self.assertEqual(signal_columns, self.dialog.column_names)
-        self.assertEqual(signal_data[1], "Updated Name")
+        # Ensure signal_data is not None before accessing its index
+        self.assertIsNotNone(signal_data, "signal_data should not be None")
+        if signal_data is not None:  # This check helps Pylance understand signal_data is not None
+            self.assertEqual(signal_data[1], "Updated Name")
     
     def test_cancel_edit(self):
         """Test canceling edit mode without saving"""
@@ -366,8 +369,9 @@ class TestRowDetailDialog(unittest.TestCase):
                 edit_action = action
                 break
         
-        self.assertIsNotNone(edit_action)
-        self.assertEqual(edit_action.shortcut().toString(), "Ctrl+E")
+        self.assertIsNotNone(edit_action, "Edit action should not be None")
+        if edit_action is not None:  # This check helps Pylance understand edit_action is not None
+            self.assertEqual(edit_action.shortcut().toString(), "Ctrl+E")
         
         # Test Ctrl+S shortcut to save changes
         save_action = None
@@ -376,8 +380,9 @@ class TestRowDetailDialog(unittest.TestCase):
                 save_action = action
                 break
         
-        self.assertIsNotNone(save_action)
-        self.assertEqual(save_action.shortcut().toString(), "Ctrl+S")
+        self.assertIsNotNone(save_action, "Save action should not be None")
+        if save_action is not None:  # This check helps Pylance understand save_action is not None
+            self.assertEqual(save_action.shortcut().toString(), "Ctrl+S")
         
         # Test Escape shortcut to cancel edit mode
         close_action = None
@@ -386,8 +391,9 @@ class TestRowDetailDialog(unittest.TestCase):
                 close_action = action
                 break
         
-        self.assertIsNotNone(close_action)
-        self.assertEqual(close_action.shortcut().toString(), "Esc")
+        self.assertIsNotNone(close_action, "Close action should not be None")
+        if close_action is not None:  # This check helps Pylance understand close_action is not None
+            self.assertEqual(close_action.shortcut().toString(), "Esc")
     
     def test_no_changes_save(self):
         """Test saving when no changes were made"""

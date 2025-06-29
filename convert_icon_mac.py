@@ -38,7 +38,7 @@ def create_iconset():
     # Create each size
     for width, height, filename in icon_sizes:
         img = Image.open(source_image)
-        img = img.resize((width, height), Image.LANCZOS)
+        img = img.resize((width, height), Image.Resampling.LANCZOS)
         img.save(os.path.join('icon.iconset', filename))
         print(f"Created {filename} ({width}x{height})")
     

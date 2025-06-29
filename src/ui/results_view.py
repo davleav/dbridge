@@ -71,6 +71,9 @@ class ResultsView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         
+        # Initialize connection attribute
+        self.connection = None
+        
         self._create_ui()
     
     def _create_ui(self):
@@ -127,6 +130,14 @@ class ResultsView(QWidget):
         
         # Auto-resize columns to content
         self.table_view.resizeColumnsToContents()
+        
+    def set_connection(self, connection):
+        """Set the database connection for this results view
+        
+        Args:
+            connection: The database connection object
+        """
+        self.connection = connection
     
     def _view_details_action(self):
         """Show details for the currently selected row (triggered from toolbar)"""

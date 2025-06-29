@@ -57,6 +57,8 @@ class ConnectionTab(QWidget):
         # Results area with tabs
         self.results_tabs = QTabWidget()
         self.results_view = ResultsView()
+        # Set the connection on the results view
+        self.results_view.set_connection(self.connection)
         self.results_tabs.addTab(self.results_view, "Results")
         editor_results_splitter.addWidget(self.results_tabs)
         
@@ -170,6 +172,9 @@ class ConnectionTab(QWidget):
             connection_name = self.connection.params['name']
             self.connection.close()
             self.db_browser.clear_connection()
+            # Clear the connection in the results view as well
+            if hasattr(self, 'results_view') and self.results_view:
+                self.results_view.set_connection(None)
             self.connection_closed.emit(connection_name)
             return True
         except Exception as e:

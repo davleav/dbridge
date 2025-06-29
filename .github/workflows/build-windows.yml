@@ -63,7 +63,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: windows-installer
-          path: installer/DBridge-${{ env.VERSION }}-Setup.exe
+          path: installer/DBridge-${{ steps.get_version.outputs.version }}-Setup.exe
           
       - name: Create Release
         id: create_release
@@ -72,8 +72,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: installer/DBridge-${{ env.VERSION }}-Setup.exe
-          name: DBridge v${{ env.VERSION }}
+          files: installer/DBridge-${{ steps.get_version.outputs.version }}-Setup.exe
+          name: DBridge v${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
           generate_release_notes: true

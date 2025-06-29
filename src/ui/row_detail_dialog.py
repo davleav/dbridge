@@ -141,8 +141,10 @@ class RowDetailDialog(QDialog):
         # Get the current theme
         app = QApplication.instance()
         is_dark_theme = False
-        if app:
-            palette = app.palette()
+        if app and isinstance(app, QApplication):
+            # Explicitly cast to QApplication to help Pylance
+            qt_app: QApplication = app
+            palette = qt_app.palette()
             is_dark_theme = palette.color(QPalette.ColorRole.Window).lightness() < 128
         
         # Save the current stylesheet
@@ -230,8 +232,10 @@ class RowDetailDialog(QDialog):
             # Make it visually distinct but respect the current theme
             # We'll use the palette to determine if we're in a dark theme
             app = QApplication.instance()
-            if app:
-                palette = app.palette()
+            if app and isinstance(app, QApplication):
+                # Explicitly cast to QApplication to help Pylance
+                qt_app: QApplication = app
+                palette = qt_app.palette()
                 is_dark_theme = palette.color(QPalette.ColorRole.Window).lightness() < 128
                 
                 if is_dark_theme:
@@ -283,8 +287,10 @@ class RowDetailDialog(QDialog):
                 
                 # Style the toggle button based on the current theme
                 app = QApplication.instance()
-                if app:
-                    palette = app.palette()
+                if app and isinstance(app, QApplication):
+                    # Explicitly cast to QApplication to help Pylance
+                    qt_app: QApplication = app
+                    palette = qt_app.palette()
                     is_dark_theme = palette.color(QPalette.ColorRole.Window).lightness() < 128
                     
                     if is_dark_theme:
@@ -689,10 +695,12 @@ class RowDetailDialog(QDialog):
     def _apply_edit_mode_styling(self, value_edit, is_edit_mode):
         """Apply styling based on edit mode"""
         app = QApplication.instance()
-        if not app:
+        if not app or not isinstance(app, QApplication):
             return
             
-        palette = app.palette()
+        # Explicitly cast to QApplication to help Pylance
+        qt_app: QApplication = app
+        palette = qt_app.palette()
         is_dark_theme = palette.color(QPalette.ColorRole.Window).lightness() < 128
         
         if is_edit_mode:
@@ -807,10 +815,12 @@ class RowDetailDialog(QDialog):
     def _update_theme_styling(self):
         """Update styling for all widgets based on the current theme"""
         app = QApplication.instance()
-        if not app:
+        if not app or not isinstance(app, QApplication):
             return
             
-        palette = app.palette()
+        # Explicitly cast to QApplication to help Pylance
+        qt_app: QApplication = app
+        palette = qt_app.palette()
         is_dark_theme = palette.color(QPalette.ColorRole.Window).lightness() < 128
         
         # Update all text edits

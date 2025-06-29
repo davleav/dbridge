@@ -21,7 +21,7 @@ def get_icon_path():
         # If running as PyInstaller bundle
         if hasattr(sys, '_MEIPASS'):
             # PyInstaller creates a temp folder and stores path in _MEIPASS
-            base_path = sys._MEIPASS
+            base_path = getattr(sys, '_MEIPASS')  # Use getattr to avoid linting issues
         else:
             base_path = os.path.dirname(sys.executable)
         

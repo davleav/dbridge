@@ -72,7 +72,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: macos-dmg
-          path: dist/DBridge-${{ env.VERSION }}.dmg
+          path: dist/DBridge-${{ steps.get_version.outputs.version }}.dmg
           
       - name: Create Release
         id: create_release
@@ -81,8 +81,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: dist/DBridge-${{ env.VERSION }}.dmg
-          name: DBridge v${{ env.VERSION }}
+          files: dist/DBridge-${{ steps.get_version.outputs.version }}.dmg
+          name: DBridge v${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
           generate_release_notes: true
