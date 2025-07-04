@@ -2,12 +2,20 @@
 SELF=$(readlink -f "$0")
 HERE=${SELF%/*}
 
+# Debug information
+echo "Starting AppRun script..."
+echo "AppDir location: ${HERE}"
+
 # Python paths
 export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${HERE}/usr/lib/python3.10:${PYTHONPATH}"
 export PYTHONHOME="${HERE}/usr"
 
-# Library paths
+# Library paths - make sure our libraries are found first
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+
+# Debug: List available libraries
+echo "Available Python libraries in AppDir:"
+ls -la ${HERE}/usr/lib/libpython* 2>/dev/null || echo "No Python libraries found!"
 
 # Qt paths - try both PyQt6 location and standard location
 export QT_PLUGIN_PATH="${HERE}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins:${HERE}/usr/plugins:${QT_PLUGIN_PATH}"

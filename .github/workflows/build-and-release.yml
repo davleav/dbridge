@@ -162,9 +162,38 @@ jobs:
             PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
             echo "Python version: $PYTHON_VERSION"
             
-            # Find and copy Python shared libraries
+            # Find and copy Python shared libraries - search in all possible locations
             find /usr/lib -name "libpython${PYTHON_VERSION}*.so*" -exec cp -v {} AppDir/usr/lib/ \; || true
             find /lib -name "libpython${PYTHON_VERSION}*.so*" -exec cp -v {} AppDir/usr/lib/ \; || true
+            find /usr/lib/x86_64-linux-gnu -name "libpython${PYTHON_VERSION}*.so*" -exec cp -v {} AppDir/usr/lib/ \; || true
+            find /lib/x86_64-linux-gnu -name "libpython${PYTHON_VERSION}*.so*" -exec cp -v {} AppDir/usr/lib/ \; || true
+            
+            # Try to find the exact library path using ldconfig
+            PYTHON_LIB_PATH=$(ldconfig -p | grep libpython${PYTHON_VERSION} | awk '{print $4}' | head -n 1)
+            if [ -n "$PYTHON_LIB_PATH" ]; then
+              echo "Found Python library at: $PYTHON_LIB_PATH"
+              cp -v "$PYTHON_LIB_PATH" AppDir/usr/lib/
+            fi
+            
+            # Try to find the library using ldd on the Python executable
+            echo "Finding libraries using ldd..."
+            ldd "$PYTHON_PATH" | grep libpython | awk '{print $3}' | xargs -I{} cp -v {} AppDir/usr/lib/ || true
+            
+            # Copy all dependencies of the Python executable
+            echo "Copying all dependencies of the Python executable..."
+            mkdir -p AppDir/usr/lib
+            ldd "$PYTHON_PATH" | grep "=>" | awk '{print $3}' | grep -v "not found" | xargs -I{} cp -v {} AppDir/usr/lib/ || true
+            
+            # Create symlinks for libraries if needed
+            echo "Creating symlinks for libraries..."
+            cd AppDir/usr/lib
+            for lib in *.so.*; do
+              if [ -f "$lib" ]; then
+                base=$(echo "$lib" | sed 's/\([^.]*\.[^.]*\)\..*/\1/')
+                ln -sf "$lib" "${base}.so" || true
+              fi
+            done
+            cd -
             
             # Copy Python standard library
             PYTHON_LIB_PATH=$(python3 -c "import sys; print([p for p in sys.path if 'python${PYTHON_VERSION}' in p and p.endswith('dist-packages') or p.endswith('site-packages')][0])" 2>/dev/null || python3 -c "import sys; print(sys.path[-1])" 2>/dev/null)
