@@ -66,6 +66,27 @@ To create a release with a specific version:
    - The workflow installs all necessary dependencies for building the AppImage
    - If you need additional dependencies, add them to the "Install system dependencies" step
 
+4. **Interactive prompts**
+   - The workflow automatically handles all interactive prompts in the script
+   - This includes the root user warning and the cleanup confirmation
+   - If you add new interactive prompts to the script, make sure to update the workflow
+
+### Specific Fixes
+
+The workflow includes several specific fixes for common issues:
+
+1. **Recursive copy issue**
+   - Problem: `cp -r "$SCRIPT_DIR"/* "$BUILD_DIR/"` fails when `$BUILD_DIR` is inside `$SCRIPT_DIR`
+   - Solution: Use `find` with exclusions to copy files instead of a simple `cp -r`
+
+2. **Interactive prompts**
+   - Problem: The script waits for user input, causing the workflow to hang
+   - Solution: Replace interactive prompts with automatic actions
+
+3. **AppImage location**
+   - Problem: The AppImage might be created in different locations
+   - Solution: Search multiple locations and copy the AppImage to the expected location
+
 ### Debugging
 
 If you encounter issues:
@@ -87,7 +108,8 @@ If you need to customize the workflow:
 The GitHub Actions workflow is designed to mimic your local build process as closely as possible. The main differences are:
 
 1. It uses a different build directory (`/tmp/dbridge_build_tmp` instead of `$HOME/dbridge_build_tmp`)
-2. It removes the interactive prompt for root user (not needed in GitHub Actions)
-3. It has additional logic to find and handle the AppImage file
+2. It removes all interactive prompts (root user warning and cleanup confirmation)
+3. It automatically cleans up the build directory at the end
+4. It has additional logic to find and handle the AppImage file
 
 If your local build process changes, you may need to update the GitHub Actions workflow to match.

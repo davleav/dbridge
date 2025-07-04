@@ -78,6 +78,9 @@ jobs:
           # Modify the copy command to exclude the build directory
           sed -i 's|cp -r "$SCRIPT_DIR"/\* "$BUILD_DIR/"|mkdir -p "$BUILD_DIR" \&\& find "$SCRIPT_DIR" -maxdepth 1 -not -path "$BUILD_DIR" -not -path "$SCRIPT_DIR" -exec cp -r {} "$BUILD_DIR/" \\;|' build_appimage_github.sh
           
+          # Remove the cleanup prompt at the end of the script and automatically clean up
+          sed -i '/# Ask if the user wants to clean up the temporary directory/,/fi/c\# Automatically clean up in GitHub Actions\necho "Automatically cleaning up build directory..."\ncd "$SCRIPT_DIR"\nrm -rf "$BUILD_DIR"' build_appimage_github.sh
+          
           # Make the script executable
           chmod +x build_appimage_github.sh
           
