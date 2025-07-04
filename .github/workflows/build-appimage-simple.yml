@@ -72,8 +72,11 @@ jobs:
           # Remove interactive prompt for root user
           sed -i '/if \[ "\$(id -u)" -eq 0 \]; then/,/fi/c\# Running in GitHub Actions environment' build_appimage_github.sh
           
-          # Update the build directory to use the GitHub workspace
-          sed -i "s|BUILD_DIR=\"\$HOME/dbridge_build_tmp\"|BUILD_DIR=\"$GITHUB_WORKSPACE/build_tmp\"|" build_appimage_github.sh
+          # Update the build directory to use a separate directory outside the workspace
+          sed -i "s|BUILD_DIR=\"\$HOME/dbridge_build_tmp\"|BUILD_DIR=\"/tmp/dbridge_build_tmp\"|" build_appimage_github.sh
+          
+          # Modify the copy command to exclude the build directory
+          sed -i 's|cp -r "$SCRIPT_DIR"/\* "$BUILD_DIR/"|mkdir -p "$BUILD_DIR" \&\& find "$SCRIPT_DIR" -maxdepth 1 -not -path "$BUILD_DIR" -not -path "$SCRIPT_DIR" -exec cp -r {} "$BUILD_DIR/" \\;|' build_appimage_github.sh
           
           # Make the script executable
           chmod +x build_appimage_github.sh
@@ -99,19 +102,42 @@ jobs:
             echo "File type: $(file "$APPIMAGE_FILENAME")"
           else
             echo "Looking for AppImage in other locations..."
-            find . -name "*.AppImage" -not -name "appimagetool-*.AppImage"
             
-            # Try to find in home directory (where the script copies it)
+            # Check in the build directory
+            if [ -f "/tmp/dbridge_build_tmp/$APPIMAGE_FILENAME" ]; then
+              echo "Found AppImage in build directory"
+              cp "/tmp/dbridge_build_tmp/$APPIMAGE_FILENAME" .
+            fi
+            
+            # Check in home directory (where the script copies it)
             if [ -f ~/"$APPIMAGE_FILENAME" ]; then
               echo "Found AppImage in home directory"
               cp ~/"$APPIMAGE_FILENAME" .
             fi
             
+            # Search for any AppImage files
+            echo "Searching for any AppImage files..."
+            find /tmp/dbridge_build_tmp -name "*.AppImage" -not -name "appimagetool-*.AppImage" || true
+            find ~ -maxdepth 1 -name "*.AppImage" -not -name "appimagetool-*.AppImage" || true
+            find . -name "*.AppImage" -not -name "appimagetool-*.AppImage" || true
+            
+            # Try to find any AppImage and use it
+            FOUND_APPIMAGE=$(find /tmp/dbridge_build_tmp -name "*.AppImage" -not -name "appimagetool-*.AppImage" | head -1)
+            if [ -n "$FOUND_APPIMAGE" ]; then
+              echo "Found AppImage at: $FOUND_APPIMAGE"
+              cp "$FOUND_APPIMAGE" "$APPIMAGE_FILENAME"
+            fi
+            
             # Check again after searching
             if [ -f "$APPIMAGE_FILENAME" ]; then
               echo "AppImage found and ready for upload"
+              ls -la "$APPIMAGE_FILENAME"
+              echo "File size: $(du -h "$APPIMAGE_FILENAME" | cut -f1)"
+              echo "File type: $(file "$APPIMAGE_FILENAME")"
             else
               echo "ERROR: AppImage was not created!"
+              echo "Current directory contents:"
+              ls -la
               exit 1
             fi
           fi
