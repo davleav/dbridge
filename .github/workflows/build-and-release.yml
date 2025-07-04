@@ -94,13 +94,13 @@ jobs:
           
           # Create AppRun script
           cat > AppDir/AppRun << 'APPRUNEOF'
-#!/bin/bash
-SELF=$(readlink -f "$0")
-HERE=${SELF%/*}
-export PATH="${HERE}/usr/bin:${PATH}"
-export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${PYTHONPATH}"
-exec "${HERE}/usr/bin/dbridge" "$@"
-APPRUNEOF
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          export PATH="${HERE}/usr/bin:${PATH}"
+          export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${PYTHONPATH}"
+          exec "${HERE}/usr/bin/dbridge" "$@"
+          APPRUNEOF
           chmod +x AppDir/AppRun
           
           # Display the AppRun script for debugging
@@ -157,13 +157,13 @@ APPRUNEOF
             
             # Make sure the launcher script points to the right location
             cat > AppDir/usr/bin/dbridge << 'LAUNCHEREOF'
-#!/bin/bash
-SELF=$(readlink -f "$0")
-HERE=${SELF%/*}
-export PYTHONPATH="${HERE}/../lib/python3.10/site-packages:${PYTHONPATH}"
-cd "${HERE}/../lib/python3.10/site-packages"
-python -m src.main
-LAUNCHEREOF
+            #!/bin/bash
+            SELF=$(readlink -f "$0")
+            HERE=${SELF%/*}
+            export PYTHONPATH="${HERE}/../lib/python3.10/site-packages:${PYTHONPATH}"
+            cd "${HERE}/../lib/python3.10/site-packages"
+            python -m src.main
+            LAUNCHEREOF
             chmod +x AppDir/usr/bin/dbridge
             
             echo "Updated AppDir structure:"
