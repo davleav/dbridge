@@ -292,7 +292,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: release_files/*
+          files: ${{ env.APPIMAGE_FILENAME }}
           name: DBridge v${{ env.VERSION }}
           draft: false
           prerelease: false
@@ -315,14 +315,14 @@ jobs:
           echo "Preparing files for release..."
           echo "APPIMAGE_FILENAME: ${{ env.APPIMAGE_FILENAME }}"
           
-          # Create a directory for release files
-          mkdir -p release_files
-          
-          # Check if AppImage exists and copy it to release_files
+          # Check if AppImage exists
           if [ -f "${{ env.APPIMAGE_FILENAME }}" ]; then
-            echo "Copying AppImage to release_files directory"
-            cp "${{ env.APPIMAGE_FILENAME }}" release_files/
-            ls -la release_files/
+            echo "AppImage file found: ${{ env.APPIMAGE_FILENAME }}"
+            echo "File size: $(du -h "${{ env.APPIMAGE_FILENAME }}" | cut -f1)"
+            echo "File type: $(file "${{ env.APPIMAGE_FILENAME }}")"
+            
+            # Make sure it's executable
+            chmod +x "${{ env.APPIMAGE_FILENAME }}"
           else
             echo "WARNING: AppImage file not found!"
             echo "Looking for any AppImage files:"
@@ -332,11 +332,13 @@ jobs:
             FOUND_APPIMAGE=$(find . -name "*.AppImage" -type f | head -1)
             if [ -n "$FOUND_APPIMAGE" ]; then
               echo "Found alternative AppImage: $FOUND_APPIMAGE"
-              cp "$FOUND_APPIMAGE" release_files/
-              echo "APPIMAGE_FILENAME=$(basename "$FOUND_APPIMAGE")" >> $GITHUB_ENV
+              echo "APPIMAGE_FILENAME=$FOUND_APPIMAGE" >> $GITHUB_ENV
+              chmod +x "$FOUND_APPIMAGE"
             else
-              echo "No AppImage files found. Creating a dummy file for testing."
-              echo "This is a placeholder file. The actual AppImage build failed." > release_files/build-failed.txt
+              echo "ERROR: No AppImage files found!"
+              echo "Current directory contents:"
+              ls -la
+              exit 1
             fi
           fi
 
@@ -347,7 +349,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: release_files/*
+          files: ${{ env.APPIMAGE_FILENAME }}
           name: DBridge v${{ env.VERSION }} (Development Build)
           tag_name: ${{ env.DEV_TAG_NAME }}
           draft: true
