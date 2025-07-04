@@ -73,6 +73,10 @@ jobs:
           sudo apt-get install -y libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libxcb-cursor0
           sudo apt-get install -y desktop-file-utils libglib2.0-bin patchelf
           
+          # Install Qt packages to get platform plugins
+          sudo apt-get install -y qt5-default qtbase5-dev libqt5gui5 libqt5widgets5 libqt5core5a || true
+          sudo apt-get install -y qt6-base-dev libqt6gui6 libqt6widgets6 libqt6core6 || true
+          
           # Use PyInstaller to bundle the application
           echo "Looking for main.py..."
           find . -name "main.py" | sort
@@ -149,28 +153,118 @@ jobs:
           cp DBridge.png AppDir/usr/share/icons/hicolor/256x256/apps/dbridge.png
           cp DBridge.png AppDir/dbridge.png
           
-          # Create launcher script
+          # Create launcher script with comprehensive Qt environment variables
           cat > AppDir/usr/bin/dbridge << 'EOF'
           #!/bin/bash
           SELF=$(readlink -f "$0")
           HERE=${SELF%/*}
-          export PYTHONPATH="${HERE}/../lib/python3.10/site-packages:${PYTHONPATH}"
-          export LD_LIBRARY_PATH="${HERE}/../lib:${LD_LIBRARY_PATH}"
-          export QT_PLUGIN_PATH="${HERE}/../lib/python3.10/site-packages/PyQt6/Qt6/plugins"
-          export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/../lib/python3.10/site-packages/PyQt6/Qt6/plugins/platforms"
-          cd "${HERE}/../lib/python3.10/site-packages"
+          APPDIR=$(dirname $(dirname "$HERE"))
+          
+          # Python paths
+          export PYTHONPATH="${APPDIR}/usr/lib/python3.10/site-packages:${PYTHONPATH}"
+          
+          # Library paths
+          export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${LD_LIBRARY_PATH}"
+          
+          # Qt paths - try both PyQt6 location and standard location
+          export QT_PLUGIN_PATH="${APPDIR}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins:${APPDIR}/usr/plugins:${QT_PLUGIN_PATH}"
+          export QT_QPA_PLATFORM_PLUGIN_PATH="${APPDIR}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/platforms:${APPDIR}/usr/plugins/platforms:${QT_QPA_PLATFORM_PLUGIN_PATH}"
+          
+          # Additional Qt environment variables
+          export QT_DEBUG_PLUGINS=1
+          export QT_XCB_GL_INTEGRATION=xcb_glx
+          export XDG_DATA_DIRS="${APPDIR}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+          
+          # Change to the Python package directory and run the main module
+          cd "${APPDIR}/usr/lib/python3.10/site-packages"
           python -m src.main
           EOF
           chmod +x AppDir/usr/bin/dbridge
           
+          # Also create a comprehensive AppRun script
+          cat > AppDir/AppRun << 'EOF'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          
+          # Python paths
+          export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${PYTHONPATH}"
+          
+          # Library paths
+          export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+          
+          # Qt paths - try both PyQt6 location and standard location
+          export QT_PLUGIN_PATH="${HERE}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins:${HERE}/usr/plugins:${QT_PLUGIN_PATH}"
+          export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/platforms:${HERE}/usr/plugins/platforms:${QT_QPA_PLATFORM_PLUGIN_PATH}"
+          
+          # Additional Qt environment variables
+          export QT_DEBUG_PLUGINS=1
+          export QT_XCB_GL_INTEGRATION=xcb_glx
+          export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+          
+          # Execute the application
+          exec "${HERE}/usr/bin/dbridge" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+          
           # Copy Qt libraries and plugins
           echo "Copying Qt libraries and plugins..."
-          mkdir -p AppDir/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/platforms
           
-          # Copy XCB libraries
+          # Create directories for Qt plugins
+          mkdir -p AppDir/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/platforms
+          mkdir -p AppDir/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/xcbglintegrations
+          mkdir -p AppDir/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/imageformats
+          mkdir -p AppDir/usr/plugins/platforms
+          
+          # Copy XCB and X11 libraries
+          echo "Copying XCB and X11 libraries..."
           cp -v /usr/lib/x86_64-linux-gnu/libxcb*.so* AppDir/usr/lib/ || true
           cp -v /usr/lib/x86_64-linux-gnu/libX*.so* AppDir/usr/lib/ || true
           cp -v /usr/lib/x86_64-linux-gnu/libxkbcommon*.so* AppDir/usr/lib/ || true
+          
+          # Copy Qt libraries
+          echo "Copying Qt libraries..."
+          cp -v /usr/lib/x86_64-linux-gnu/libQt*.so* AppDir/usr/lib/ || true
+          
+          # Find and copy Qt platform plugins (both Qt5 and Qt6)
+          echo "Finding Qt platform plugins..."
+          
+          # For Qt5
+          QT5_PLUGIN_PATH=$(find /usr -path "*/qt5/plugins/platforms/libqxcb.so" 2>/dev/null || echo "")
+          if [ -n "$QT5_PLUGIN_PATH" ]; then
+            echo "Found Qt5 XCB plugin at: $QT5_PLUGIN_PATH"
+            QT5_PLUGIN_DIR=$(dirname "$QT5_PLUGIN_PATH")
+            QT5_ROOT=$(dirname "$(dirname "$QT5_PLUGIN_DIR")")
+            echo "Copying Qt5 platform plugins..."
+            cp -rv "$QT5_PLUGIN_DIR"/* AppDir/usr/plugins/platforms/ || true
+            cp -rv "$QT5_ROOT"/xcbglintegrations/* AppDir/usr/plugins/xcbglintegrations/ || true
+            cp -rv "$QT5_ROOT"/imageformats/* AppDir/usr/plugins/imageformats/ || true
+          fi
+          
+          # For Qt6
+          QT6_PLUGIN_PATH=$(find /usr -path "*/qt6/plugins/platforms/libqxcb.so" 2>/dev/null || echo "")
+          if [ -n "$QT6_PLUGIN_PATH" ]; then
+            echo "Found Qt6 XCB plugin at: $QT6_PLUGIN_PATH"
+            QT6_PLUGIN_DIR=$(dirname "$QT6_PLUGIN_PATH")
+            QT6_ROOT=$(dirname "$(dirname "$QT6_PLUGIN_DIR")")
+            echo "Copying Qt6 platform plugins..."
+            cp -rv "$QT6_PLUGIN_DIR"/* AppDir/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/platforms/ || true
+            cp -rv "$QT6_ROOT"/xcbglintegrations/* AppDir/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/xcbglintegrations/ || true
+            cp -rv "$QT6_ROOT"/imageformats/* AppDir/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/imageformats/ || true
+          fi
+          
+          # If we couldn't find the plugins, try to find them in PyQt6 installation
+          if [ ! -f "AppDir/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/platforms/libqxcb.so" ] && [ ! -f "AppDir/usr/plugins/platforms/libqxcb.so" ]; then
+            echo "Looking for plugins in PyQt6 installation..."
+            PYQT6_PATH=$(python -c "import PyQt6; print(PyQt6.__path__[0])" 2>/dev/null || echo "")
+            if [ -n "$PYQT6_PATH" ]; then
+              echo "Found PyQt6 at: $PYQT6_PATH"
+              if [ -d "$PYQT6_PATH/Qt6/plugins" ]; then
+                echo "Copying PyQt6 plugins..."
+                cp -rv "$PYQT6_PATH"/Qt6/plugins/* AppDir/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/ || true
+              fi
+            fi
+          fi
           
           # Skip linuxdeploy and use appimagetool directly
           echo "Using appimagetool directly..."
