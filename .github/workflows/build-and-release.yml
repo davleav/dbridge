@@ -110,12 +110,22 @@ jobs:
           # Copy the bundled application to AppDir
           cp -r dist/dbridge/* AppDir/usr/bin/
           
-          # Download and use appimagetool
+          # Download appimagetool
           wget -c "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
           chmod +x appimagetool-x86_64.AppImage
           
-          # Build the AppImage
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir DBridge-${VERSION}-x86_64.AppImage
+          # Install FUSE
+          sudo apt-get update
+          sudo apt-get install -y libfuse2
+          
+          # Try to run appimagetool directly, if it fails, use the extracted version
+          echo "Trying to run AppImageTool directly..."
+          if ! ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir DBridge-${VERSION}-x86_64.AppImage; then
+            echo "Direct execution failed, extracting AppImageTool..."
+            ./appimagetool-x86_64.AppImage --appimage-extract
+            echo "Running extracted AppImageTool..."
+            ARCH=x86_64 ./squashfs-root/AppRun AppDir DBridge-${VERSION}-x86_64.AppImage
+          fi
           
           # Ensure the AppImage is executable
           chmod +x DBridge-${VERSION}-x86_64.AppImage
