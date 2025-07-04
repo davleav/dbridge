@@ -95,20 +95,62 @@ jobs:
           chmod +x AppDir/usr/bin/dbridge
           
           # Use PyInstaller to bundle the application
+          echo "Looking for main.py..."
+          find . -name "main.py" | sort
+          
           if [ -f src/main.py ]; then
+            echo "Found src/main.py, using it for PyInstaller"
             pyinstaller --onedir --name dbridge src/main.py
           else
+            echo "src/main.py not found, searching for alternatives..."
             MAIN_PY=$(find . -name "main.py" | head -1)
             if [ -n "$MAIN_PY" ]; then
+              echo "Found alternative main.py at: $MAIN_PY"
               pyinstaller --onedir --name dbridge "$MAIN_PY"
             else
               echo "Error: No main.py found. Cannot continue."
+              echo "Current directory structure:"
+              find . -type f -name "*.py" | sort
               exit 1
             fi
           fi
           
+          # Verify PyInstaller output
+          echo "Checking PyInstaller output:"
+          if [ -d "dist/dbridge" ]; then
+            echo "PyInstaller output exists at dist/dbridge"
+            ls -la dist/dbridge
+          else
+            echo "ERROR: PyInstaller output not found!"
+            echo "Contents of dist directory (if it exists):"
+            ls -la dist || echo "dist directory does not exist"
+            exit 1
+          fi
+          
           # Copy the bundled application to AppDir
           cp -r dist/dbridge/* AppDir/usr/bin/
+          
+          # Verify AppDir structure before running AppImageTool
+          echo "Verifying AppDir structure..."
+          echo "Contents of AppDir:"
+          find AppDir -type f | sort
+          
+          echo "Checking for desktop file:"
+          ls -la AppDir/*.desktop AppDir/usr/share/applications/*.desktop || echo "Desktop files not found!"
+          
+          echo "Checking for icon file:"
+          ls -la AppDir/*.png AppDir/usr/share/icons/hicolor/256x256/apps/*.png || echo "Icon files not found!"
+          
+          echo "Checking for AppRun and executable:"
+          ls -la AppDir/AppRun || echo "AppRun not found!"
+          ls -la AppDir/usr/bin/dbridge || echo "dbridge executable not found!"
+          
+          echo "Checking AppDir structure is complete for AppImage creation:"
+          if [ -f "AppDir/AppRun" ] && [ -f "AppDir/usr/bin/dbridge" ] && [ -f "AppDir/usr/share/applications/dbridge.desktop" ] && [ -f "AppDir/usr/share/icons/hicolor/256x256/apps/dbridge.png" ]; then
+            echo "AppDir structure looks correct"
+          else
+            echo "WARNING: AppDir structure may be incomplete!"
+          fi
           
           # Download appimagetool
           wget -c "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
@@ -120,21 +162,53 @@ jobs:
           
           # Try to run appimagetool directly, if it fails, use the extracted version
           echo "Trying to run AppImageTool directly..."
-          if ! ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir DBridge-${VERSION}-x86_64.AppImage; then
+          APPIMAGE_FILENAME="DBridge-${VERSION}-x86_64.AppImage"
+          echo "AppImage filename will be: $APPIMAGE_FILENAME"
+          
+          if ! ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir "$APPIMAGE_FILENAME"; then
             echo "Direct execution failed, extracting AppImageTool..."
             ./appimagetool-x86_64.AppImage --appimage-extract
             echo "Running extracted AppImageTool..."
-            ARCH=x86_64 ./squashfs-root/AppRun AppDir DBridge-${VERSION}-x86_64.AppImage
+            ARCH=x86_64 ./squashfs-root/AppRun AppDir "$APPIMAGE_FILENAME"
           fi
           
-          # Ensure the AppImage is executable
-          chmod +x DBridge-${VERSION}-x86_64.AppImage
+          # Check if AppImage was created
+          if [ -f "$APPIMAGE_FILENAME" ]; then
+            echo "AppImage created successfully: $APPIMAGE_FILENAME"
+            # Ensure the AppImage is executable
+            chmod +x "$APPIMAGE_FILENAME"
+            # List directory contents to verify
+            ls -la
+          else
+            echo "ERROR: AppImage was not created!"
+            echo "Current directory contents:"
+            ls -la
+            exit 1
+          fi
           
+      # Save the AppImage filename as an output
+      - name: Set AppImage filename as output
+        id: appimage_filename
+        run: |
+          APPIMAGE_FILENAME="DBridge-${VERSION}-x86_64.AppImage"
+          echo "APPIMAGE_FILENAME=$APPIMAGE_FILENAME" >> $GITHUB_ENV
+          echo "filename=$APPIMAGE_FILENAME" >> $GITHUB_OUTPUT
+          echo "AppImage filename: $APPIMAGE_FILENAME"
+          # Verify file exists again
+          if [ -f "$APPIMAGE_FILENAME" ]; then
+            echo "File exists and will be uploaded"
+            ls -la "$APPIMAGE_FILENAME"
+          else
+            echo "ERROR: File does not exist!"
+            ls -la
+            exit 1
+          fi
+
       - name: Upload AppImage as artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: DBridge-${VERSION}-x86_64.AppImage
+          path: ${{ env.APPIMAGE_FILENAME }}
 
       - name: Create Release
         id: create_release
@@ -142,10 +216,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ env.VERSION }}
         with:
-          files: DBridge-${VERSION}-x86_64.AppImage
-          name: DBridge v${VERSION}
+          files: ${{ env.APPIMAGE_FILENAME }}
+          name: DBridge v${{ env.VERSION }}
           draft: false
           prerelease: false
           generate_release_notes: true
