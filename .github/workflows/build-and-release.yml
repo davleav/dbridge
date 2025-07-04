@@ -196,8 +196,7 @@ jobs:
           echo "Using Python version for paths: $PYTHON_VERSION"
           
           # Create launcher script with comprehensive Qt environment variables
-          cat > AppDir/usr/bin/dbridge << 'EOF'
-#!/bin/bash
+          echo '#!/bin/bash
 SELF=$(readlink -f "$0")
 HERE=${SELF%/*}
 APPDIR=$(dirname $(dirname "$HERE"))
@@ -234,13 +233,11 @@ else
     echo "Error: Python executable not found"
     exit 1
   fi
-fi
-EOF
+fi' > AppDir/usr/bin/dbridge
           chmod +x AppDir/usr/bin/dbridge
           
           # Also create a comprehensive AppRun script
-          cat > AppDir/AppRun << 'EOF'
-#!/bin/bash
+          echo '#!/bin/bash
 SELF=$(readlink -f "$0")
 HERE=${SELF%/*}
 
@@ -277,8 +274,7 @@ else
 fi
 
 # Execute the application
-exec "${HERE}/usr/bin/dbridge" "$@"
-EOF
+exec "${HERE}/usr/bin/dbridge" "$@"' > AppDir/AppRun
           chmod +x AppDir/AppRun
           
           # Copy Qt libraries and plugins
