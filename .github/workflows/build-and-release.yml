@@ -148,6 +148,26 @@ jobs:
           # Copy PyInstaller output to AppDir
           cp -r dist/dbridge/* AppDir/
           
+          # Copy Python executable to AppDir
+          echo "Copying Python executable to AppDir..."
+          PYTHON_PATH=$(which python3 || which python)
+          if [ -n "$PYTHON_PATH" ]; then
+            echo "Found Python at: $PYTHON_PATH"
+            mkdir -p AppDir/usr/bin
+            cp -v "$PYTHON_PATH" AppDir/usr/bin/python3
+            ln -sf python3 AppDir/usr/bin/python
+            
+            # Copy Python standard library
+            PYTHON_LIB_PATH=$(python3 -c "import sys; print(sys.path[-1])" 2>/dev/null)
+            if [ -n "$PYTHON_LIB_PATH" ] && [ -d "$PYTHON_LIB_PATH" ]; then
+              echo "Copying Python standard library from: $PYTHON_LIB_PATH"
+              mkdir -p AppDir/usr/lib/python3.10
+              cp -rv "$PYTHON_LIB_PATH"/* AppDir/usr/lib/python3.10/ || true
+            fi
+          else
+            echo "WARNING: Python executable not found!"
+          fi
+          
           # Copy desktop file and icon
           cp dist/dbridge/dbridge.desktop AppDir/usr/share/applications/
           cp DBridge.png AppDir/usr/share/icons/hicolor/256x256/apps/dbridge.png
@@ -177,7 +197,21 @@ jobs:
           
           # Change to the Python package directory and run the main module
           cd "${APPDIR}/usr/lib/python3.10/site-packages"
-          python -m src.main
+          # Use absolute path to Python if available, otherwise try to find it
+          if [ -f "${APPDIR}/usr/bin/python3" ]; then
+            "${APPDIR}/usr/bin/python3" -m src.main
+          elif [ -f "${APPDIR}/usr/bin/python" ]; then
+            "${APPDIR}/usr/bin/python" -m src.main
+          else
+            # Try to find Python in PATH
+            PYTHON_PATH=$(which python3 2>/dev/null || which python 2>/dev/null)
+            if [ -n "$PYTHON_PATH" ]; then
+              "$PYTHON_PATH" -m src.main
+            else
+              echo "Error: Python executable not found"
+              exit 1
+            fi
+          fi
           EOF
           chmod +x AppDir/usr/bin/dbridge
           
@@ -201,6 +235,22 @@ jobs:
           export QT_DEBUG_PLUGINS=1
           export QT_XCB_GL_INTEGRATION=xcb_glx
           export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+          
+          # Execute the application with proper Python path
+          if [ -f "${HERE}/usr/bin/python3" ]; then
+            export PYTHON="${HERE}/usr/bin/python3"
+          elif [ -f "${HERE}/usr/bin/python" ]; then
+            export PYTHON="${HERE}/usr/bin/python"
+          else
+            # Try to find Python in PATH
+            PYTHON_PATH=$(which python3 2>/dev/null || which python 2>/dev/null)
+            if [ -n "$PYTHON_PATH" ]; then
+              export PYTHON="$PYTHON_PATH"
+            else
+              echo "Error: Python executable not found"
+              exit 1
+            fi
+          fi
           
           # Execute the application
           exec "${HERE}/usr/bin/dbridge" "$@"
