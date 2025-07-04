@@ -6,6 +6,12 @@ on:
       - 'v*'  # Run workflow on version tags, e.g. v0.8.1
   workflow_dispatch:  # Allow manual triggering
 
+# Add permissions needed for creating releases
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -267,6 +273,18 @@ jobs:
           prerelease: false
           generate_release_notes: true
           
+      # For manual triggers, create a tag first, then create a release
+      - name: Create Tag for Manual Trigger
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          TAG_NAME="dev-${{ github.run_number }}"
+          echo "Creating tag $TAG_NAME"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a $TAG_NAME -m "Development build ${{ github.run_number }}"
+          git push origin $TAG_NAME
+          echo "DEV_TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+
       - name: Create Release (Manual Trigger)
         id: create_release_manual
         uses: softprops/action-gh-release@v1
@@ -276,7 +294,7 @@ jobs:
         with:
           files: ${{ env.APPIMAGE_FILENAME }}
           name: DBridge v${{ env.VERSION }} (Development Build)
-          tag_name: dev-${{ github.run_number }}
+          tag_name: ${{ env.DEV_TAG_NAME }}
           draft: true
           prerelease: true
           generate_release_notes: false
