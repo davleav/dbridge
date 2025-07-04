@@ -157,12 +157,30 @@ jobs:
             cp -v "$PYTHON_PATH" AppDir/usr/bin/python3
             ln -sf python3 AppDir/usr/bin/python
             
+            # Copy Python shared libraries
+            echo "Copying Python shared libraries..."
+            PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+            echo "Python version: $PYTHON_VERSION"
+            
+            # Find and copy Python shared libraries
+            find /usr/lib -name "libpython${PYTHON_VERSION}*.so*" -exec cp -v {} AppDir/usr/lib/ \; || true
+            find /lib -name "libpython${PYTHON_VERSION}*.so*" -exec cp -v {} AppDir/usr/lib/ \; || true
+            
             # Copy Python standard library
-            PYTHON_LIB_PATH=$(python3 -c "import sys; print(sys.path[-1])" 2>/dev/null)
+            PYTHON_LIB_PATH=$(python3 -c "import sys; print([p for p in sys.path if 'python${PYTHON_VERSION}' in p and p.endswith('dist-packages') or p.endswith('site-packages')][0])" 2>/dev/null || python3 -c "import sys; print(sys.path[-1])" 2>/dev/null)
             if [ -n "$PYTHON_LIB_PATH" ] && [ -d "$PYTHON_LIB_PATH" ]; then
               echo "Copying Python standard library from: $PYTHON_LIB_PATH"
-              mkdir -p AppDir/usr/lib/python3.10
-              cp -rv "$PYTHON_LIB_PATH"/* AppDir/usr/lib/python3.10/ || true
+              mkdir -p AppDir/usr/lib/python${PYTHON_VERSION}
+              cp -rv "$PYTHON_LIB_PATH"/* AppDir/usr/lib/python${PYTHON_VERSION}/ || true
+            fi
+            
+            # Copy Python binary modules
+            echo "Copying Python binary modules..."
+            PYTHON_DYNLOAD_PATH=$(python3 -c "import os, sys; print(os.path.join(os.path.dirname([p for p in sys.path if p.endswith('lib-dynload')][0]), 'lib-dynload'))" 2>/dev/null || echo "")
+            if [ -n "$PYTHON_DYNLOAD_PATH" ] && [ -d "$PYTHON_DYNLOAD_PATH" ]; then
+              echo "Copying Python binary modules from: $PYTHON_DYNLOAD_PATH"
+              mkdir -p AppDir/usr/lib/python${PYTHON_VERSION}/lib-dynload
+              cp -rv "$PYTHON_DYNLOAD_PATH"/* AppDir/usr/lib/python${PYTHON_VERSION}/lib-dynload/ || true
             fi
           else
             echo "WARNING: Python executable not found!"
@@ -173,40 +191,46 @@ jobs:
           cp DBridge.png AppDir/usr/share/icons/hicolor/256x256/apps/dbridge.png
           cp DBridge.png AppDir/dbridge.png
           
+          # Get Python version for paths
+          PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "3.10")
+          echo "Using Python version for paths: $PYTHON_VERSION"
+          
           # Create launcher script with comprehensive Qt environment variables
-          cat > AppDir/usr/bin/dbridge << 'EOF'
+          cat > AppDir/usr/bin/dbridge << EOF
           #!/bin/bash
-          SELF=$(readlink -f "$0")
-          HERE=${SELF%/*}
-          APPDIR=$(dirname $(dirname "$HERE"))
+          SELF=\$(readlink -f "\$0")
+          HERE=\${SELF%/*}
+          APPDIR=\$(dirname \$(dirname "\$HERE"))
           
           # Python paths
-          export PYTHONPATH="${APPDIR}/usr/lib/python3.10/site-packages:${PYTHONPATH}"
+          export PYTHONPATH="\${APPDIR}/usr/lib/python${PYTHON_VERSION}/site-packages:\${APPDIR}/usr/lib/python${PYTHON_VERSION}:\${PYTHONPATH}"
+          export PYTHONHOME="\${APPDIR}/usr"
           
           # Library paths
-          export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${LD_LIBRARY_PATH}"
+          export LD_LIBRARY_PATH="\${APPDIR}/usr/lib:\${LD_LIBRARY_PATH}"
           
           # Qt paths - try both PyQt6 location and standard location
-          export QT_PLUGIN_PATH="${APPDIR}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins:${APPDIR}/usr/plugins:${QT_PLUGIN_PATH}"
-          export QT_QPA_PLATFORM_PLUGIN_PATH="${APPDIR}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/platforms:${APPDIR}/usr/plugins/platforms:${QT_QPA_PLATFORM_PLUGIN_PATH}"
+          export QT_PLUGIN_PATH="\${APPDIR}/usr/lib/python${PYTHON_VERSION}/site-packages/PyQt6/Qt6/plugins:\${APPDIR}/usr/plugins:\${QT_PLUGIN_PATH}"
+          export QT_QPA_PLATFORM_PLUGIN_PATH="\${APPDIR}/usr/lib/python${PYTHON_VERSION}/site-packages/PyQt6/Qt6/plugins/platforms:\${APPDIR}/usr/plugins/platforms:\${QT_QPA_PLATFORM_PLUGIN_PATH}"
           
           # Additional Qt environment variables
           export QT_DEBUG_PLUGINS=1
           export QT_XCB_GL_INTEGRATION=xcb_glx
-          export XDG_DATA_DIRS="${APPDIR}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+          export XDG_DATA_DIRS="\${APPDIR}/usr/share:\${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+EOF
           
           # Change to the Python package directory and run the main module
-          cd "${APPDIR}/usr/lib/python3.10/site-packages"
+          cd "\${APPDIR}/usr/lib/python${PYTHON_VERSION}/site-packages"
           # Use absolute path to Python if available, otherwise try to find it
-          if [ -f "${APPDIR}/usr/bin/python3" ]; then
-            "${APPDIR}/usr/bin/python3" -m src.main
-          elif [ -f "${APPDIR}/usr/bin/python" ]; then
-            "${APPDIR}/usr/bin/python" -m src.main
+          if [ -f "\${APPDIR}/usr/bin/python3" ]; then
+            "\${APPDIR}/usr/bin/python3" -m src.main
+          elif [ -f "\${APPDIR}/usr/bin/python" ]; then
+            "\${APPDIR}/usr/bin/python" -m src.main
           else
             # Try to find Python in PATH
-            PYTHON_PATH=$(which python3 2>/dev/null || which python 2>/dev/null)
-            if [ -n "$PYTHON_PATH" ]; then
-              "$PYTHON_PATH" -m src.main
+            PYTHON_PATH=\$(which python3 2>/dev/null || which python 2>/dev/null)
+            if [ -n "\$PYTHON_PATH" ]; then
+              "\$PYTHON_PATH" -m src.main
             else
               echo "Error: Python executable not found"
               exit 1
@@ -216,36 +240,37 @@ jobs:
           chmod +x AppDir/usr/bin/dbridge
           
           # Also create a comprehensive AppRun script
-          cat > AppDir/AppRun << 'EOF'
+          cat > AppDir/AppRun << EOF
           #!/bin/bash
-          SELF=$(readlink -f "$0")
-          HERE=${SELF%/*}
+          SELF=\$(readlink -f "\$0")
+          HERE=\${SELF%/*}
           
           # Python paths
-          export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${PYTHONPATH}"
+          export PYTHONPATH="\${HERE}/usr/lib/python${PYTHON_VERSION}/site-packages:\${HERE}/usr/lib/python${PYTHON_VERSION}:\${PYTHONPATH}"
+          export PYTHONHOME="\${HERE}/usr"
           
           # Library paths
-          export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+          export LD_LIBRARY_PATH="\${HERE}/usr/lib:\${LD_LIBRARY_PATH}"
           
           # Qt paths - try both PyQt6 location and standard location
-          export QT_PLUGIN_PATH="${HERE}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins:${HERE}/usr/plugins:${QT_PLUGIN_PATH}"
-          export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/platforms:${HERE}/usr/plugins/platforms:${QT_QPA_PLATFORM_PLUGIN_PATH}"
+          export QT_PLUGIN_PATH="\${HERE}/usr/lib/python${PYTHON_VERSION}/site-packages/PyQt6/Qt6/plugins:\${HERE}/usr/plugins:\${QT_PLUGIN_PATH}"
+          export QT_QPA_PLATFORM_PLUGIN_PATH="\${HERE}/usr/lib/python${PYTHON_VERSION}/site-packages/PyQt6/Qt6/plugins/platforms:\${HERE}/usr/plugins/platforms:\${QT_QPA_PLATFORM_PLUGIN_PATH}"
           
           # Additional Qt environment variables
           export QT_DEBUG_PLUGINS=1
           export QT_XCB_GL_INTEGRATION=xcb_glx
-          export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+          export XDG_DATA_DIRS="\${HERE}/usr/share:\${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
           
           # Execute the application with proper Python path
-          if [ -f "${HERE}/usr/bin/python3" ]; then
-            export PYTHON="${HERE}/usr/bin/python3"
-          elif [ -f "${HERE}/usr/bin/python" ]; then
-            export PYTHON="${HERE}/usr/bin/python"
+          if [ -f "\${HERE}/usr/bin/python3" ]; then
+            export PYTHON="\${HERE}/usr/bin/python3"
+          elif [ -f "\${HERE}/usr/bin/python" ]; then
+            export PYTHON="\${HERE}/usr/bin/python"
           else
             # Try to find Python in PATH
-            PYTHON_PATH=$(which python3 2>/dev/null || which python 2>/dev/null)
-            if [ -n "$PYTHON_PATH" ]; then
-              export PYTHON="$PYTHON_PATH"
+            PYTHON_PATH=\$(which python3 2>/dev/null || which python 2>/dev/null)
+            if [ -n "\$PYTHON_PATH" ]; then
+              export PYTHON="\$PYTHON_PATH"
             else
               echo "Error: Python executable not found"
               exit 1
@@ -253,7 +278,7 @@ jobs:
           fi
           
           # Execute the application
-          exec "${HERE}/usr/bin/dbridge" "$@"
+          exec "\${HERE}/usr/bin/dbridge" "\$@"
           EOF
           chmod +x AppDir/AppRun
           
