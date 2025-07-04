@@ -68,7 +68,7 @@ jobs:
           echo "Installing dependencies..."
           sudo apt-get update
           sudo apt-get install -y python3-pip python3-dev python3-venv python3-setuptools python3-wheel
-          sudo apt-get install -y libgl1-mesa-glx libegl1-mesa libxkbcommon-x11-0 
+          sudo apt-get install -y libgl1 libegl1 libxkbcommon-x11-0 
           sudo apt-get install -y libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 
           sudo apt-get install -y libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libxcb-cursor0
           sudo apt-get install -y desktop-file-utils libglib2.0-bin patchelf
@@ -143,7 +143,14 @@ jobs:
           ./linuxdeploy-plugin-qt-x86_64.AppImage --appimage-extract
           
           # Set up environment for Qt plugin
-          export QMAKE=/usr/lib/qt5/bin/qmake
+          # Try to find qmake
+          QMAKE_PATH=$(which qmake 2>/dev/null || which qmake-qt5 2>/dev/null || echo "")
+          if [ -n "$QMAKE_PATH" ]; then
+            echo "Found qmake at: $QMAKE_PATH"
+            export QMAKE=$QMAKE_PATH
+          else
+            echo "qmake not found, will try to proceed without it"
+          fi
           export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
           
           # Create AppDir structure
@@ -185,7 +192,17 @@ jobs:
           
           # Run linuxdeploy to handle dependencies
           echo "Running linuxdeploy to handle dependencies..."
-          ./squashfs-root/AppRun --appdir=AppDir --plugin=qt --output=appimage
+          # First try with Qt plugin
+          if [ -n "$QMAKE_PATH" ]; then
+            echo "Running linuxdeploy with Qt plugin..."
+            ./squashfs-root/AppRun --appdir=AppDir --plugin=qt --output=appimage || true
+          fi
+          
+          # If no AppImage was created, try without Qt plugin
+          if [ ! -f "DBridge-${VERSION}-x86_64.AppImage" ]; then
+            echo "Qt plugin may have failed, trying linuxdeploy without plugins..."
+            ./squashfs-root/AppRun --appdir=AppDir --output=appimage || true
+          fi
           
           # If linuxdeploy fails, use appimagetool directly
           if [ ! -f "DBridge-${VERSION}-x86_64.AppImage" ]; then
