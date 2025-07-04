@@ -31,13 +31,23 @@ jobs:
       - name: Extract version from tag
         id: get_version
         run: |
+          echo "GITHUB_REF is: $GITHUB_REF"
+          echo "GITHUB_SHA is: $GITHUB_SHA"
+          
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            echo "This is a tag-based build"
             VERSION=${GITHUB_REF#refs/tags/v}
           else
+            echo "This is a manual or branch-based build"
             VERSION="dev-$(date +'%Y%m%d')"
           fi
+          
+          echo "Setting VERSION to: $VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Verify the environment variable was set
+          echo "Verifying VERSION environment variable: $VERSION"
           
       - name: Build AppImage
         run: |
@@ -179,6 +189,19 @@ jobs:
             chmod +x "$APPIMAGE_FILENAME"
             # List directory contents to verify
             ls -la
+            
+            # Check file type and size
+            echo "AppImage file type: $(file "$APPIMAGE_FILENAME")"
+            echo "AppImage file size: $(du -h "$APPIMAGE_FILENAME" | cut -f1)"
+            
+            # Try to run the AppImage with --appimage-extract-and-run to verify it's valid
+            echo "Attempting to verify AppImage validity..."
+            if ./"$APPIMAGE_FILENAME" --appimage-offset > /dev/null 2>&1; then
+              echo "AppImage appears to be valid (has AppImage offset)"
+            else
+              echo "WARNING: AppImage may not be valid (no AppImage offset found)"
+              # Don't exit with error yet, we'll still try to upload it
+            fi
           else
             echo "ERROR: AppImage was not created!"
             echo "Current directory contents:"
@@ -190,17 +213,30 @@ jobs:
       - name: Set AppImage filename as output
         id: appimage_filename
         run: |
+          echo "Current VERSION is: $VERSION"
           APPIMAGE_FILENAME="DBridge-${VERSION}-x86_64.AppImage"
           echo "APPIMAGE_FILENAME=$APPIMAGE_FILENAME" >> $GITHUB_ENV
           echo "filename=$APPIMAGE_FILENAME" >> $GITHUB_OUTPUT
           echo "AppImage filename: $APPIMAGE_FILENAME"
+          
+          # List all files in the current directory
+          echo "All files in current directory:"
+          ls -la
+          
+          # Check for any AppImage files
+          echo "Looking for any AppImage files:"
+          find . -name "*.AppImage" -type f
+          
           # Verify file exists again
           if [ -f "$APPIMAGE_FILENAME" ]; then
             echo "File exists and will be uploaded"
             ls -la "$APPIMAGE_FILENAME"
+            echo "File size: $(du -h "$APPIMAGE_FILENAME" | cut -f1)"
+            echo "File type: $(file "$APPIMAGE_FILENAME")"
           else
-            echo "ERROR: File does not exist!"
-            ls -la
+            echo "ERROR: Expected AppImage file does not exist!"
+            echo "Looking for any files that might be the AppImage with a different name:"
+            find . -type f -size +1M | xargs ls -lh
             exit 1
           fi
 
@@ -209,6 +245,14 @@ jobs:
         with:
           name: linux-appimage
           path: ${{ env.APPIMAGE_FILENAME }}
+
+      - name: Debug Release Info
+        run: |
+          echo "github.ref: ${{ github.ref }}"
+          echo "startsWith check: ${{ startsWith(github.ref, 'refs/tags/') }}"
+          echo "VERSION: ${{ env.VERSION }}"
+          echo "APPIMAGE_FILENAME: ${{ env.APPIMAGE_FILENAME }}"
+          echo "File exists check: $([ -f "${{ env.APPIMAGE_FILENAME }}" ] && echo 'Yes' || echo 'No')"
 
       - name: Create Release
         id: create_release
