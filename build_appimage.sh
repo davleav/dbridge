@@ -5,6 +5,13 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo "Script located at: $SCRIPT_DIR"
 
+# Set version number (can be updated in one place)
+VERSION="0.8.0"
+APP_NAME="DBridge-Beta"
+ARCH="x86_64"
+APPIMAGE_FILENAME="${APP_NAME}-${VERSION}-${ARCH}.AppImage"
+echo "Building AppImage: $APPIMAGE_FILENAME"
+
 # Create a temporary directory in the user's home directory
 BUILD_DIR="$HOME/dbridge_build_tmp"
 echo "Creating temporary build directory at $BUILD_DIR"
@@ -15,10 +22,16 @@ mkdir -p "$BUILD_DIR"
 echo "Copying project files to temporary directory..."
 cp -r "$SCRIPT_DIR"/* "$BUILD_DIR/"
 
-# Create the fixed build script
-cat > "$BUILD_DIR/build_local.sh" << 'EOL'
+# Pass variables to the build script
+cat > "$BUILD_DIR/build_local.sh" << EOL
 #!/bin/bash
 # Script to build an AppImage for DBridge
+
+# Set version information from parent script
+VERSION="${VERSION}"
+APP_NAME="${APP_NAME}"
+ARCH="${ARCH}"
+APPIMAGE_FILENAME="${APPIMAGE_FILENAME}"
 
 set -e
 
@@ -60,12 +73,12 @@ cp resources/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/dbridge.png
 cp resources/icon.png AppDir/dbridge.png
 
 # Create desktop file in both required locations
-cat > AppDir/usr/share/applications/dbridge.desktop << 'DESKTOPEOF'
+cat > AppDir/usr/share/applications/dbridge.desktop << DESKTOPEOF
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=DBridge Beta
-Comment=A user-friendly SQL client (Beta 0.8.0)
+Name=${APP_NAME}
+Comment=A user-friendly SQL client (Beta ${VERSION})
 Exec=dbridge
 Icon=dbridge
 Categories=Development;Database;
@@ -138,12 +151,12 @@ echo "Checking for icon file:"
 ls -la AppDir/*.png AppDir/usr/share/icons/hicolor/256x256/apps/*.png
 
 echo "Running AppImageTool..."
-ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir DBridge-Beta-0.8.0-x86_64.AppImage
+ARCH=${ARCH} ./appimagetool-x86_64.AppImage AppDir ${APPIMAGE_FILENAME}
 
 # Ensure the AppImage is executable
-chmod +x DBridge-Beta-0.8.0-x86_64.AppImage
+chmod +x ${APPIMAGE_FILENAME}
 
-echo "AppImage created: DBridge-Beta-0.8.0-x86_64.AppImage"
+echo "AppImage created: ${APPIMAGE_FILENAME}"
 EOL
 
 # Make the script executable
@@ -155,18 +168,18 @@ cd "$BUILD_DIR"
 ./build_local.sh
 
 # Copy the resulting AppImage back to the original location
-if [ -f "$BUILD_DIR/DBridge-Beta-0.8.0-x86_64.AppImage" ]; then
-    echo "Build successful! Copying AppImage to original location..."
+if [ -f "$BUILD_DIR/$APPIMAGE_FILENAME" ]; then
+    echo "Build successful! Copying AppImage to script location..."
     # Make the AppImage executable in the build directory
-    chmod +x "$BUILD_DIR/DBridge-Beta-0.8.0-x86_64.AppImage"
-    # Copy the AppImage to both the original location and home directory
-    cp "$BUILD_DIR/DBridge-Beta-0.8.0-x86_64.AppImage" "$SCRIPT_DIR/"
-    cp "$BUILD_DIR/DBridge-Beta-0.8.0-x86_64.AppImage" ~/DBridge-Beta-0.8.0-x86_64.AppImage
+    chmod +x "$BUILD_DIR/$APPIMAGE_FILENAME"
+    # Copy the AppImage to both the script location and home directory
+    cp "$BUILD_DIR/$APPIMAGE_FILENAME" "$SCRIPT_DIR/"
+    cp "$BUILD_DIR/$APPIMAGE_FILENAME" ~/"$APPIMAGE_FILENAME"
     # Make sure the copied AppImage is executable (though it won't work on noexec filesystem)
-    chmod +x "$SCRIPT_DIR/DBridge-Beta-0.8.0-x86_64.AppImage"
-    chmod +x ~/DBridge-Beta-0.8.0-x86_64.AppImage
-    echo "AppImage is now available at: $SCRIPT_DIR/DBridge-Beta-0.8.0-x86_64.AppImage"
-    echo "A copy is also available at: ~/DBridge-Beta-0.8.0-x86_64.AppImage (use this one to execute)"
+    chmod +x "$SCRIPT_DIR/$APPIMAGE_FILENAME"
+    chmod +x ~/"$APPIMAGE_FILENAME"
+    echo "AppImage is now available at: $SCRIPT_DIR/$APPIMAGE_FILENAME"
+    echo "A copy is also available at: ~/$APPIMAGE_FILENAME (use this one to execute)"
     echo "Permissions have been set to make the AppImage executable."
 else
     echo "Build failed. Check the logs for errors."
