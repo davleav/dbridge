@@ -254,8 +254,8 @@ jobs:
           echo "APPIMAGE_FILENAME: ${{ env.APPIMAGE_FILENAME }}"
           echo "File exists check: $([ -f "${{ env.APPIMAGE_FILENAME }}" ] && echo 'Yes' || echo 'No')"
 
-      - name: Create Release
-        id: create_release
+      - name: Create Release (Tag-based)
+        id: create_release_tag
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -266,3 +266,25 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          
+      - name: Create Release (Manual Trigger)
+        id: create_release_manual
+        uses: softprops/action-gh-release@v1
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: ${{ env.APPIMAGE_FILENAME }}
+          name: DBridge v${{ env.VERSION }} (Development Build)
+          tag_name: dev-${{ github.run_number }}
+          draft: true
+          prerelease: true
+          generate_release_notes: false
+          body: |
+            # Development Build
+            
+            This is a development build created from the ${{ github.ref_name }} branch.
+            Build number: ${{ github.run_number }}
+            Commit: ${{ github.sha }}
+            
+            This release is automatically generated from a manual workflow trigger.
