@@ -93,14 +93,12 @@ jobs:
           chmod 755 AppDir/usr/share/applications/dbridge.desktop
           
           # Create AppRun script
-          cat > AppDir/AppRun << 'APPRUNEOF'
-          #!/bin/bash
-          SELF=$(readlink -f "$0")
-          HERE=${SELF%/*}
-          export PATH="${HERE}/usr/bin:${PATH}"
-          export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${PYTHONPATH}"
-          exec "${HERE}/usr/bin/dbridge" "$@"
-          APPRUNEOF
+          echo '#!/bin/bash' > AppDir/AppRun
+          echo 'SELF=$(readlink -f "$0")' >> AppDir/AppRun
+          echo 'HERE=${SELF%/*}' >> AppDir/AppRun
+          echo 'export PATH="${HERE}/usr/bin:${PATH}"' >> AppDir/AppRun
+          echo 'export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${PYTHONPATH}"' >> AppDir/AppRun
+          echo 'exec "${HERE}/usr/bin/dbridge" "$@"' >> AppDir/AppRun
           chmod +x AppDir/AppRun
           
           # Display the AppRun script for debugging
@@ -108,10 +106,8 @@ jobs:
           cat AppDir/AppRun
           
           # Create launcher script
-          cat > AppDir/usr/bin/dbridge << 'LAUNCHEREOF'
-          #!/bin/bash
-          python -m src.main
-          LAUNCHEREOF
+          echo '#!/bin/bash' > AppDir/usr/bin/dbridge
+          echo 'python -m src.main' >> AppDir/usr/bin/dbridge
           chmod +x AppDir/usr/bin/dbridge
           
           # Use PyInstaller to bundle the application
@@ -156,14 +152,12 @@ jobs:
             cp -rv dist/dbridge/* AppDir/usr/lib/python3.10/site-packages/
             
             # Make sure the launcher script points to the right location
-            cat > AppDir/usr/bin/dbridge << 'LAUNCHEREOF'
-            #!/bin/bash
-            SELF=$(readlink -f "$0")
-            HERE=${SELF%/*}
-            export PYTHONPATH="${HERE}/../lib/python3.10/site-packages:${PYTHONPATH}"
-            cd "${HERE}/../lib/python3.10/site-packages"
-            python -m src.main
-            LAUNCHEREOF
+            echo '#!/bin/bash' > AppDir/usr/bin/dbridge
+            echo 'SELF=$(readlink -f "$0")' >> AppDir/usr/bin/dbridge
+            echo 'HERE=${SELF%/*}' >> AppDir/usr/bin/dbridge
+            echo 'export PYTHONPATH="${HERE}/../lib/python3.10/site-packages:${PYTHONPATH}"' >> AppDir/usr/bin/dbridge
+            echo 'cd "${HERE}/../lib/python3.10/site-packages"' >> AppDir/usr/bin/dbridge
+            echo 'python -m src.main' >> AppDir/usr/bin/dbridge
             chmod +x AppDir/usr/bin/dbridge
             
             echo "Updated AppDir structure:"
