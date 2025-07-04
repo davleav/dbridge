@@ -51,6 +51,9 @@ jobs:
           
       - name: Create Windows installer
         run: |
+          # Create installer output directory
+          mkdir -p installer
+          
           # Create a temporary Inno Setup script with the version
           $content = Get-Content -Path dbridge_installer.iss
           $content = $content -replace '#define MyAppVersion.*', "#define AppVersion `"$env:VERSION`""
