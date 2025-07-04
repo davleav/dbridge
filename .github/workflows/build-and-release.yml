@@ -142,6 +142,8 @@ jobs:
           # Create AppDir structure
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/lib
+          mkdir -p AppDir/usr/lib/python${PYTHON_VERSION}
+          mkdir -p AppDir/usr/lib/python${PYTHON_VERSION}/site-packages
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
           
@@ -196,11 +198,64 @@ jobs:
             cd -
             
             # Copy Python standard library
-            PYTHON_LIB_PATH=$(python3 -c "import sys; print([p for p in sys.path if 'python${PYTHON_VERSION}' in p and p.endswith('dist-packages') or p.endswith('site-packages')][0])" 2>/dev/null || python3 -c "import sys; print(sys.path[-1])" 2>/dev/null)
-            if [ -n "$PYTHON_LIB_PATH" ] && [ -d "$PYTHON_LIB_PATH" ]; then
-              echo "Copying Python standard library from: $PYTHON_LIB_PATH"
+            echo "Copying Python standard library..."
+            
+            # First, get the Python standard library path
+            PYTHON_STD_LIB_PATH=$(python3 -c "import os, sys; print([p for p in sys.path if os.path.basename(p) == 'python${PYTHON_VERSION}' and os.path.exists(os.path.join(p, 'encodings'))][0])" 2>/dev/null || echo "")
+            
+            if [ -z "$PYTHON_STD_LIB_PATH" ]; then
+              # Try alternative method to find standard library
+              PYTHON_STD_LIB_PATH=$(python3 -c "import os, sys; print(os.path.dirname(os.__file__))" 2>/dev/null || echo "")
+            fi
+            
+            # If still not found, try common locations
+            if [ -z "$PYTHON_STD_LIB_PATH" ] || [ ! -d "$PYTHON_STD_LIB_PATH" ]; then
+              for path in /usr/lib/python${PYTHON_VERSION} /usr/local/lib/python${PYTHON_VERSION}; do
+                if [ -d "$path" ]; then
+                  PYTHON_STD_LIB_PATH="$path"
+                  echo "Found Python standard library at common location: $PYTHON_STD_LIB_PATH"
+                  break
+                fi
+              done
+            fi
+            
+            if [ -n "$PYTHON_STD_LIB_PATH" ] && [ -d "$PYTHON_STD_LIB_PATH" ]; then
+              echo "Copying Python standard library from: $PYTHON_STD_LIB_PATH"
               mkdir -p AppDir/usr/lib/python${PYTHON_VERSION}
-              cp -rv "$PYTHON_LIB_PATH"/* AppDir/usr/lib/python${PYTHON_VERSION}/ || true
+              cp -rv "$PYTHON_STD_LIB_PATH"/* AppDir/usr/lib/python${PYTHON_VERSION}/ || true
+              
+              # Verify encodings module was copied
+              if [ -d "AppDir/usr/lib/python${PYTHON_VERSION}/encodings" ]; then
+                echo "Encodings module successfully copied"
+              else
+                echo "WARNING: Encodings module not found in copied files!"
+                # Try direct copy of encodings module
+                ENCODINGS_PATH=$(python3 -c "import os, encodings; print(os.path.dirname(encodings.__file__))" 2>/dev/null || echo "")
+                if [ -n "$ENCODINGS_PATH" ] && [ -d "$ENCODINGS_PATH" ]; then
+                  echo "Directly copying encodings module from: $ENCODINGS_PATH"
+                  mkdir -p AppDir/usr/lib/python${PYTHON_VERSION}/encodings
+                  cp -rv "$ENCODINGS_PATH"/* AppDir/usr/lib/python${PYTHON_VERSION}/encodings/ || true
+                fi
+              fi
+            else
+              echo "WARNING: Python standard library path not found!"
+              # Try to find it in common locations
+              for path in /usr/lib/python${PYTHON_VERSION} /usr/local/lib/python${PYTHON_VERSION}; do
+                if [ -d "$path" ] && [ -d "$path/encodings" ]; then
+                  echo "Found Python standard library at: $path"
+                  mkdir -p AppDir/usr/lib/python${PYTHON_VERSION}
+                  cp -rv "$path"/* AppDir/usr/lib/python${PYTHON_VERSION}/ || true
+                  break
+                fi
+              done
+            fi
+            
+            # Copy site-packages
+            PYTHON_SITE_PACKAGES=$(python3 -c "import sys; print([p for p in sys.path if 'python${PYTHON_VERSION}' in p and (p.endswith('dist-packages') or p.endswith('site-packages'))][0])" 2>/dev/null || echo "")
+            if [ -n "$PYTHON_SITE_PACKAGES" ] && [ -d "$PYTHON_SITE_PACKAGES" ]; then
+              echo "Copying Python site-packages from: $PYTHON_SITE_PACKAGES"
+              mkdir -p AppDir/usr/lib/python${PYTHON_VERSION}/site-packages
+              cp -rv "$PYTHON_SITE_PACKAGES"/* AppDir/usr/lib/python${PYTHON_VERSION}/site-packages/ || true
             fi
             
             # Copy Python binary modules
@@ -299,6 +354,34 @@ jobs:
           # Extract appimagetool to avoid FUSE issues
           ./appimagetool-x86_64.AppImage --appimage-extract
           chmod -R +x squashfs-root/
+          
+          # Verify critical Python modules are included
+          echo "Verifying Python standard library modules..."
+          if [ -d "AppDir/usr/lib/python${PYTHON_VERSION}/encodings" ]; then
+            echo "✓ Encodings module found"
+            ls -la AppDir/usr/lib/python${PYTHON_VERSION}/encodings
+          else
+            echo "❌ ERROR: Encodings module not found! AppImage will likely fail."
+            echo "Attempting emergency copy of encodings module..."
+            
+            # Try to find encodings module in system Python
+            ENCODINGS_PATH=$(python3 -c "import encodings, os; print(os.path.dirname(encodings.__file__))" 2>/dev/null || echo "")
+            if [ -n "$ENCODINGS_PATH" ] && [ -d "$ENCODINGS_PATH" ]; then
+              echo "Found encodings module at: $ENCODINGS_PATH"
+              mkdir -p AppDir/usr/lib/python${PYTHON_VERSION}/encodings
+              cp -rv "$ENCODINGS_PATH"/* AppDir/usr/lib/python${PYTHON_VERSION}/encodings/
+            else
+              # Try common locations
+              for path in /usr/lib/python${PYTHON_VERSION}/encodings /usr/local/lib/python${PYTHON_VERSION}/encodings; do
+                if [ -d "$path" ]; then
+                  echo "Found encodings module at: $path"
+                  mkdir -p AppDir/usr/lib/python${PYTHON_VERSION}/encodings
+                  cp -rv "$path"/* AppDir/usr/lib/python${PYTHON_VERSION}/encodings/
+                  break
+                fi
+              done
+            fi
+          fi
           
           # Set AppImage filename
           APPIMAGE_FILENAME="DBridge-${VERSION}-x86_64.AppImage"

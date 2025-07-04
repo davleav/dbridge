@@ -7,8 +7,13 @@ echo "Starting AppRun script..."
 echo "AppDir location: ${HERE}"
 
 # Python paths
-export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${HERE}/usr/lib/python3.10:${PYTHONPATH}"
+export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${HERE}/usr/lib/python3.10:${HERE}/usr/lib/python3.10/site-packages:${HERE}/usr/lib/python3.10:${PYTHONPATH}"
 export PYTHONHOME="${HERE}/usr"
+
+# Debug Python paths
+echo "Python path configuration:"
+echo "  PYTHONHOME = '${PYTHONHOME}'"
+echo "  PYTHONPATH = '${PYTHONPATH}'"
 
 # Library paths - make sure our libraries are found first
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"

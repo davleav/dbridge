@@ -8,8 +8,13 @@ echo "Starting launcher script..."
 echo "AppDir location: ${APPDIR}"
 
 # Python paths
-export PYTHONPATH="${APPDIR}/usr/lib/python3.10/site-packages:${APPDIR}/usr/lib/python3.10:${PYTHONPATH}"
+export PYTHONPATH="${APPDIR}/usr/lib/python3.10/site-packages:${APPDIR}/usr/lib/python3.10:${APPDIR}/usr/lib/python3.10/site-packages:${APPDIR}/usr/lib/python3.10:${PYTHONPATH}"
 export PYTHONHOME="${APPDIR}/usr"
+
+# Debug Python paths
+echo "Python path configuration:"
+echo "  PYTHONHOME = '${PYTHONHOME}'"
+echo "  PYTHONPATH = '${PYTHONPATH}'"
 
 # Library paths - make sure our libraries are found first
 export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${LD_LIBRARY_PATH}"
