@@ -92,12 +92,16 @@ jobs:
           chmod 755 AppDir/dbridge.desktop
           chmod 755 AppDir/usr/share/applications/dbridge.desktop
           
-          # Create AppRun script
+          # Create AppRun script with Qt environment variables
           echo '#!/bin/bash' > AppDir/AppRun
           echo 'SELF=$(readlink -f "$0")' >> AppDir/AppRun
           echo 'HERE=${SELF%/*}' >> AppDir/AppRun
           echo 'export PATH="${HERE}/usr/bin:${PATH}"' >> AppDir/AppRun
           echo 'export PYTHONPATH="${HERE}/usr/lib/python3.10/site-packages:${PYTHONPATH}"' >> AppDir/AppRun
+          echo 'export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"' >> AppDir/AppRun
+          echo 'export QT_PLUGIN_PATH="${HERE}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins"' >> AppDir/AppRun
+          echo 'export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/lib/python3.10/site-packages/PyQt6/Qt6/plugins/platforms"' >> AppDir/AppRun
+          echo 'export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"' >> AppDir/AppRun
           echo 'exec "${HERE}/usr/bin/dbridge" "$@"' >> AppDir/AppRun
           chmod +x AppDir/AppRun
           
@@ -114,15 +118,20 @@ jobs:
           echo "Looking for main.py..."
           find . -name "main.py" | sort
           
+          # Install Qt dependencies
+          echo "Installing Qt dependencies..."
+          sudo apt-get update
+          sudo apt-get install -y libxcb-cursor0 libxcb-cursor-dev libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
+          
           if [ -f src/main.py ]; then
             echo "Found src/main.py, using it for PyInstaller"
-            pyinstaller --onedir --name dbridge src/main.py
+            pyinstaller --onedir --name dbridge --add-binary="/usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0:." src/main.py
           else
             echo "src/main.py not found, searching for alternatives..."
             MAIN_PY=$(find . -name "main.py" | head -1)
             if [ -n "$MAIN_PY" ]; then
               echo "Found alternative main.py at: $MAIN_PY"
-              pyinstaller --onedir --name dbridge "$MAIN_PY"
+              pyinstaller --onedir --name dbridge --add-binary="/usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0:." "$MAIN_PY"
             else
               echo "Error: No main.py found. Cannot continue."
               echo "Current directory structure:"
@@ -150,6 +159,17 @@ jobs:
             # Copy Python modules to site-packages
             mkdir -p AppDir/usr/lib/python3.10/site-packages
             cp -rv dist/dbridge/* AppDir/usr/lib/python3.10/site-packages/
+            
+            # Create lib directory and copy required Qt libraries
+            mkdir -p AppDir/usr/lib
+            cp -v /usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0 AppDir/usr/lib/
+            cp -v /usr/lib/x86_64-linux-gnu/libxcb-xkb.so.1 AppDir/usr/lib/
+            cp -v /usr/lib/x86_64-linux-gnu/libxkbcommon-x11.so.0 AppDir/usr/lib/
+            cp -v /usr/lib/x86_64-linux-gnu/libxcb-icccm.so.4 AppDir/usr/lib/
+            cp -v /usr/lib/x86_64-linux-gnu/libxcb-image.so.0 AppDir/usr/lib/
+            cp -v /usr/lib/x86_64-linux-gnu/libxcb-keysyms.so.1 AppDir/usr/lib/
+            cp -v /usr/lib/x86_64-linux-gnu/libxcb-render-util.so.0 AppDir/usr/lib/
+            cp -v /usr/lib/x86_64-linux-gnu/libxcb-xinerama.so.0 AppDir/usr/lib/
             
             # Make sure the launcher script points to the right location
             echo '#!/bin/bash' > AppDir/usr/bin/dbridge
