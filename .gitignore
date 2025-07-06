@@ -39,4 +39,5 @@ Thumbs.db
 resources/icon.png
 
 # Zencoder
-.Zencoder/*
+.zencoder/*
+=6.4.0
