@@ -37,3 +37,6 @@ Thumbs.db
 
 # Application specific
 resources/icon.png
+
+# Zencoder
+.Zencoder/*

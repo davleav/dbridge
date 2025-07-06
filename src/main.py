@@ -4,7 +4,11 @@ DBridge - A user-friendly SQL client
 Main entry point for the application
 """
 import sys
-from PyQt6.QtWidgets import QApplication
+try:
+    from PyQt6.QtWidgets import QApplication
+except ImportError:
+    print("PyQt6 is not installed. Please install it using: pip install PyQt6>=6.4.0")
+    sys.exit(1)
 from src.ui.main_window import MainWindow
 
 def main():

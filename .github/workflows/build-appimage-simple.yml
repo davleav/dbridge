@@ -89,12 +89,14 @@ jobs:
           cat build_appimage_github.sh
           
       - name: Build AppImage using modified script
+        id: build_appimage
         run: |
           # Run the modified script
           ./build_appimage_github.sh
           
           # Set the AppImage filename for later steps
           APPIMAGE_FILENAME="DBridge-Beta-${VERSION}-x86_64.AppImage"
+          echo "appimage_filename=$APPIMAGE_FILENAME" >> $GITHUB_OUTPUT
           echo "APPIMAGE_FILENAME=$APPIMAGE_FILENAME" >> $GITHUB_ENV
           
           # Verify the AppImage was created
@@ -149,7 +151,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: ${{ env.APPIMAGE_FILENAME }}
+          path: ${{ steps.build_appimage.outputs.appimage_filename }}
           
       - name: Create Release (Tag-based)
         id: create_release_tag
@@ -158,8 +160,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: ${{ env.APPIMAGE_FILENAME }}
-          name: DBridge v${{ env.VERSION }}
+          files: ${{ steps.build_appimage.outputs.appimage_filename }}
+          name: DBridge v${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -172,8 +174,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: ${{ env.APPIMAGE_FILENAME }}
-          name: DBridge Development Build v${{ env.VERSION }}
+          files: ${{ steps.build_appimage.outputs.appimage_filename }}
+          name: DBridge Development Build v${{ steps.get_version.outputs.version }}
           tag_name: dev-${{ github.run_number }}
           draft: false
           prerelease: true
