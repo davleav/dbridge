@@ -20,7 +20,7 @@ fi
 echo "Script located at: $SCRIPT_DIR"
 
 # Set version number (can be updated in one place)
-VERSION="0.8.0"
+VERSION="0.8.2"
 APP_NAME="DBridge-Beta"
 ARCH="x86_64"
 APPIMAGE_FILENAME="${APP_NAME}-${VERSION}-${ARCH}.AppImage"

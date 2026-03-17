@@ -67,8 +67,8 @@ app = BUNDLE(
     icon='DBridge.icns',
     bundle_identifier='com.dbridge.app',
     info_plist={
-        'CFBundleShortVersionString': '0.8.0',
-        'CFBundleVersion': '0.8.0',
+        'CFBundleShortVersionString': '0.8.2',
+        'CFBundleVersion': '0.8.2',
         'NSHighResolutionCapable': True,
         'NSRequiresAquaSystemAppearance': False,  # Allow dark mode
         'CFBundleDisplayName': 'DBridge',

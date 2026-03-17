@@ -11,7 +11,7 @@ This workflow uses the `build_appimage_simple.sh` script to build an AppImage fo
 **File:** `.github/workflows/build-appimage-simple.yml`
 
 **Triggers:**
-- Push of a tag starting with 'v' (e.g., v0.8.1)
+- Push of a tag starting with 'v' (e.g., v0.8.2)
 - Manual trigger from the GitHub Actions UI
 
 **What it does:**
@@ -44,8 +44,8 @@ To create a release with a specific version:
 
 1. Create and push a tag with the version number:
    ```
-   git tag v0.8.1
-   git push origin v0.8.1
+   git tag v0.8.2
+   git push origin v0.8.2
    ```
 
 2. The workflow will automatically run and create a release with the AppImage attached.

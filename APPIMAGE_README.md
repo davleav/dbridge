@@ -12,7 +12,7 @@ The DBridge AppImage requires the following dependencies:
 
 1. Make the AppImage executable:
    ```
-   chmod +x DBridge-Beta-0.8.0-x86_64.AppImage
+   chmod +x DBridge-Beta-0.8.2-x86_64.AppImage
    ```
 
 2. Install dependencies (if needed):
@@ -25,7 +25,7 @@ The DBridge AppImage requires the following dependencies:
 After installing dependencies, you can run DBridge by executing the AppImage:
 
 ```
-./DBridge-Beta-0.8.0-x86_64.AppImage
+./DBridge-Beta-0.8.2-x86_64.AppImage
 ```
 
 ## Troubleshooting
@@ -54,7 +54,7 @@ If the script doesn't work for your distribution, you'll need to install the pac
 If you still have issues with the XCB platform, you can try forcing DBridge to use a different Qt platform:
 
 ```
-QT_QPA_PLATFORM=wayland ./DBridge-Beta-0.8.0-x86_64.AppImage
+QT_QPA_PLATFORM=wayland ./DBridge-Beta-0.8.2-x86_64.AppImage
 ```
 
 Other platform options include:

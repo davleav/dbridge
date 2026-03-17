@@ -29,4 +29,4 @@
 
 ## Commit & Pull Request Guidelines
 - Commit messages should be descriptive and typically start with a verb (e.g., `fix issue...`, `add feature...`, `improve handling...`).
-- CI/CD builds for AppImage are triggered by version tags (e.g., `v0.8.1`).
+- CI/CD builds for AppImage are triggered by version tags (e.g., `v0.8.2`).

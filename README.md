@@ -1,6 +1,6 @@
-# DBridge (Beta 0.8.1)
+# DBridge (Beta 0.8.2)
 
-> **Note:** This is a beta version (0.8.1) of DBridge. Some features may be incomplete or subject to change.
+> **Note:** This is a beta version (0.8.2) of DBridge. Some features may be incomplete or subject to change.
 
 A user-friendly SQL client for Linux that runs as an AppImage.
 

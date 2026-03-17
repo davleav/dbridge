@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="dbridge",
-    version="0.8.0b",
+    version="0.8.2b",
     packages=find_packages(),
     install_requires=[
         "PyQt6>=6.4.0",

@@ -1,9 +1,9 @@
 name: Build AppImage (Simple)
 
 on:
-  push:
-    tags:
-      - 'v*'  # Run workflow on version tags, e.g. v0.8.1
+  workflow_run:
+    workflows: ["Build and Release AppImage"]
+    types: [completed]
   workflow_dispatch:  # Allow manual triggering
 
 # Add permissions needed for creating releases
@@ -15,10 +15,13 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event_name == 'workflow_dispatch' }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
         
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -34,15 +37,20 @@ jobs:
             pip install PyQt6 SQLAlchemy pymysql psycopg2-binary pandas matplotlib pyinstaller
           fi
           
-      - name: Extract version from tag
+      - name: Extract version
         id: get_version
         run: |
           echo "GITHUB_REF is: $GITHUB_REF"
           echo "GITHUB_SHA is: $GITHUB_SHA"
+          echo "Triggering workflow head_branch: ${{ github.event.workflow_run.head_branch }}"
           
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             echo "This is a tag-based build"
             VERSION=${GITHUB_REF#refs/tags/v}
+          elif [[ "${{ github.event.workflow_run.head_branch }}" == v* ]]; then
+            echo "This is a fallback build for tag: ${{ github.event.workflow_run.head_branch }}"
+            VERSION_TAG="${{ github.event.workflow_run.head_branch }}"
+            VERSION=${VERSION_TAG#v}
           else
             echo "This is a manual or branch-based build"
             VERSION="dev-$(date +'%Y%m%d')"
@@ -67,7 +75,7 @@ jobs:
           cp build_appimage_simple.sh build_appimage_github.sh
           
           # Update the version in the script to use the GitHub Actions version
-          sed -i "s/VERSION=\"0.8.0\"/VERSION=\"$VERSION\"/" build_appimage_github.sh
+          sed -i "s/VERSION=\"0.8.2\"/VERSION=\"$VERSION\"/" build_appimage_github.sh
           
           # Remove interactive prompt for root user
           sed -i '/if \[ "\$(id -u)" -eq 0 \]; then/,/fi/c\# Running in GitHub Actions environment' build_appimage_github.sh
@@ -156,12 +164,13 @@ jobs:
       - name: Create Release (Tag-based)
         id: create_release_tag
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_run' && startsWith(github.event.workflow_run.head_branch, 'v'))
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: ${{ steps.build_appimage.outputs.appimage_filename }}
           name: DBridge v${{ steps.get_version.outputs.version }}
+          tag_name: ${{ github.event.workflow_run.head_branch || github.ref_name }}
           draft: false
           prerelease: false
           generate_release_notes: true

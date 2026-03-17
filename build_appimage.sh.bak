@@ -106,6 +106,6 @@ cp -r dist/dbridge/* AppDir/usr/bin/
 # Download and use appimagetool
 wget -c "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
 chmod +x appimagetool-x86_64.AppImage
-./appimagetool-x86_64.AppImage AppDir DBridge-Beta-0.8.0-x86_64.AppImage
+./appimagetool-x86_64.AppImage AppDir DBridge-Beta-0.8.2-x86_64.AppImage
 
-echo "AppImage created: DBridge-Beta-0.8.0-x86_64.AppImage"
+echo "AppImage created: DBridge-Beta-0.8.2-x86_64.AppImage"

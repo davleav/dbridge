@@ -37,8 +37,8 @@ To create a release:
 
 1. Create and push a tag with the version number:
    ```
-   git tag v0.8.1
-   git push origin v0.8.1
+   git tag v0.8.2
+   git push origin v0.8.2
    ```
 
 2. The workflow will automatically run and create a release with the AppImage attached.
