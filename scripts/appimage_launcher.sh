@@ -32,20 +32,10 @@ export QT_DEBUG_PLUGINS=1
 export QT_XCB_GL_INTEGRATION=xcb_glx
 export XDG_DATA_DIRS="${APPDIR}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 
-# Change to the Python package directory and run the main module
-cd "${APPDIR}/usr/lib/python3.10/site-packages"
-# Use absolute path to Python if available, otherwise try to find it
-if [ -f "${APPDIR}/usr/bin/python3" ]; then
-  "${APPDIR}/usr/bin/python3" -m src.main
-elif [ -f "${APPDIR}/usr/bin/python" ]; then
-  "${APPDIR}/usr/bin/python" -m src.main
+# Run the PyInstaller binary directly
+if [ -f "${APPDIR}/dbridge" ]; then
+  exec "${APPDIR}/dbridge" "$@"
 else
-  # Try to find Python in PATH
-  PYTHON_PATH=$(which python3 2>/dev/null || which python 2>/dev/null)
-  if [ -n "$PYTHON_PATH" ]; then
-    "$PYTHON_PATH" -m src.main
-  else
-    echo "Error: Python executable not found"
-    exit 1
-  fi
+  echo "Error: dbridge binary not found at ${APPDIR}/dbridge"
+  exit 1
 fi
