@@ -1,4 +1,5 @@
 #define MyAppName "DBridge"
+#define AppVersion 0.1.0
 #define MyAppPublisher "DBridge"
 #define MyAppURL "https://github.com/davleav/dbridge"
 #define MyAppExeName "DBridge.exe"

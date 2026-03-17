@@ -46,7 +46,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='DBridge.png',  # Icon for the executable
+    icon='DBridge.ico',  # Icon for the executable
 )
 
 coll = COLLECT(
