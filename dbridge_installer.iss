@@ -1,16 +1,15 @@
 #define MyAppName "DBridge"
-#define AppVersion "0.1.0"
+#define AppVersion 0.1.0
 #define MyAppPublisher "DBridge"
 #define MyAppURL "https://github.com/davleav/dbridge"
 #define MyAppExeName "DBridge.exe"
-#define PublicAppVersion RemoveQuotes(AppVersion)
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
 ; Do not use the same AppId value in installers for other applications.
 AppId={{8A9D3F7C-7E9B-4D5F-8E1A-F5C2B8C9D3E7}
 AppName={#MyAppName}
-AppVersion={#AppVersion}
+AppVersion="{#AppVersion}"
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
@@ -18,7 +17,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=installer
-OutputBaseFilename=DBridge-{#PublicAppVersion}-Setup
+OutputBaseFilename=DBridge-{#AppVersion}-Setup
 Compression=lzma
 SolidCompression=yes
 SetupIconFile=DBridge.ico

@@ -56,7 +56,7 @@ jobs:
           
           # Create a temporary Inno Setup script with the version
           $content = Get-Content -Path dbridge_installer.iss
-          $content = $content -replace '#define AppVersion.*', "#define AppVersion `"$env:VERSION`""
+          $content = $content -replace '#define AppVersion.*', "#define AppVersion $env:VERSION"
           $content | Set-Content -Path dbridge_installer_temp.iss
           
           # Compile the installer
