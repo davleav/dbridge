@@ -1,5 +1,5 @@
 """
-SQL query editor with syntax highlighting
+SQL / MongoDB JSON query editor with syntax highlighting
 """
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QPlainTextEdit, QApplication
@@ -127,8 +127,60 @@ class SQLSyntaxHighlighter(QSyntaxHighlighter):
             start_index = next_match.capturedStart() + start_index + comment_length if next_match.hasMatch() else -1
 
 
+class JSONSyntaxHighlighter(QSyntaxHighlighter):
+    """JSON syntax highlighter for MongoDB queries"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._setup_rules()
+
+    def _is_dark_theme(self):
+        app = QApplication.instance()
+        if app:
+            window_color = app.palette().color(QPalette.ColorRole.Window)
+            brightness = (0.299 * window_color.red() +
+                         0.587 * window_color.green() +
+                         0.114 * window_color.blue())
+            return brightness < 128
+        return False
+
+    def _setup_rules(self):
+        self._rules = []
+        is_dark = self._is_dark_theme()
+
+        key_format = QTextCharFormat()
+        key_format.setForeground(QColor("#9CDCFE" if is_dark else "#0451A5"))
+        self._rules.append((QRegularExpression('"[^"]*"\\s*:'), key_format))
+
+        string_format = QTextCharFormat()
+        string_format.setForeground(QColor("#CE9178" if is_dark else "#A31515"))
+        self._rules.append((QRegularExpression('"[^"]*"'), string_format))
+
+        number_format = QTextCharFormat()
+        number_format.setForeground(QColor("#B5CEA8" if is_dark else "#098658"))
+        self._rules.append((QRegularExpression("\\b-?[0-9]+(\\.[0-9]+)?\\b"), number_format))
+
+        keyword_format = QTextCharFormat()
+        keyword_format.setForeground(QColor("#569CD6" if is_dark else "#0000FF"))
+        keyword_format.setFontWeight(QFont.Weight.Bold)
+        for word in ("\\btrue\\b", "\\bfalse\\b", "\\bnull\\b"):
+            self._rules.append((QRegularExpression(word), keyword_format))
+
+        operator_format = QTextCharFormat()
+        operator_format.setForeground(QColor("#D4D4D4" if is_dark else "#800000"))
+        self._rules.append((QRegularExpression("\\$[a-zA-Z]+"), operator_format))
+
+    def highlightBlock(self, text):
+        self._setup_rules()
+        for pattern, fmt in self._rules:
+            match_iter = pattern.globalMatch(text)
+            while match_iter.hasNext():
+                match = match_iter.next()
+                self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
+
+
 class QueryEditor(QWidget):
-    """SQL query editor widget with syntax highlighting"""
+    """SQL / MongoDB JSON query editor widget with syntax highlighting"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -143,11 +195,22 @@ class QueryEditor(QWidget):
         font = QFont("Courier New", 10)
         self.editor.setFont(font)
         
-        # Apply syntax highlighting
+        # Apply SQL syntax highlighting by default
         self.highlighter = SQLSyntaxHighlighter(self.editor.document())
+        self._mode = 'sql'
         
         layout.addWidget(self.editor)
-    
+
+    def set_mode(self, mode: str) -> None:
+        """Switch highlighting mode.  mode: 'sql' or 'mongodb'"""
+        if mode == self._mode:
+            return
+        self._mode = mode
+        if mode == 'mongodb':
+            self.highlighter = JSONSyntaxHighlighter(self.editor.document())
+        else:
+            self.highlighter = SQLSyntaxHighlighter(self.editor.document())
+
     def get_query(self):
         """Get the current query text"""
         return self.editor.toPlainText()

@@ -112,7 +112,37 @@ class ConnectionDialog(QDialog):
         sqlite_layout.addRow("Database File:", sqlite_file_layout)
         
         self.conn_tabs.addTab(sqlite_tab, "SQLite")
-        
+
+        # MongoDB tab
+        mongo_tab = QWidget()
+        mongo_layout = QFormLayout(mongo_tab)
+
+        self.mongo_host = QLineEdit("localhost")
+        mongo_layout.addRow("Host:", self.mongo_host)
+
+        self.mongo_port = QSpinBox()
+        self.mongo_port.setRange(1, 65535)
+        self.mongo_port.setValue(27017)
+        mongo_layout.addRow("Port:", self.mongo_port)
+
+        self.mongo_user = QLineEdit()
+        mongo_layout.addRow("Username (optional):", self.mongo_user)
+
+        self.mongo_password = QLineEdit()
+        self.mongo_password.setEchoMode(QLineEdit.EchoMode.Password)
+        mongo_layout.addRow("Password (optional):", self.mongo_password)
+
+        self.mongo_save_password = QCheckBox("Save password (encrypted)")
+        mongo_layout.addRow("", self.mongo_save_password)
+
+        self.mongo_auth_database = QLineEdit("admin")
+        mongo_layout.addRow("Auth Database:", self.mongo_auth_database)
+
+        self.mongo_database = QLineEdit()
+        mongo_layout.addRow("Database (optional):", self.mongo_database)
+
+        self.conn_tabs.addTab(mongo_tab, "MongoDB")
+
         layout.addWidget(self.conn_tabs)
         
         # Test connection button
@@ -141,20 +171,23 @@ class ConnectionDialog(QDialog):
     def _test_connection(self) -> None:
         """Test the current connection settings"""
         from PyQt6.QtWidgets import QMessageBox
-        from src.core.connection_manager import DatabaseConnection
+        from src.core.connection_manager import DatabaseConnection, MongoConnection
         # Import the patch to handle string values for port and save_password
         import src.core.connection_manager_patch
-        
+
         # Validate input before testing
         if not self._validate_connection_input():
             return
-            
+
         try:
             # Get the current connection parameters
             connection_params = self.get_connection_params()
-            
+
             # Create a temporary connection to test
-            temp_connection = DatabaseConnection(connection_params)
+            if connection_params.get('type') == 'MongoDB':
+                temp_connection = MongoConnection(connection_params)
+            else:
+                temp_connection = DatabaseConnection(connection_params)
             
             # If we get here, the connection was successful
             
@@ -237,7 +270,12 @@ class ConnectionDialog(QDialog):
             if not self.sqlite_file.text().strip():
                 QMessageBox.warning(self, "Validation Error", "Please select a database file.")
                 return False
-                
+
+        elif conn_type == 'MongoDB':
+            if not self.mongo_host.text().strip():
+                QMessageBox.warning(self, "Validation Error", "Please enter a host name.")
+                return False
+
         return True
     
     def _on_accept(self) -> None:
@@ -292,6 +330,21 @@ class ConnectionDialog(QDialog):
         elif conn_type == 'SQLite':
             self.conn_tabs.setCurrentIndex(2)  # SQLite tab
             self.sqlite_file.setText(self.connection_params.get('database', ''))
+        elif conn_type == 'MongoDB':
+            self.conn_tabs.setCurrentIndex(3)  # MongoDB tab
+            self.mongo_host.setText(self.connection_params.get('host', 'localhost'))
+            self.mongo_port.setValue(int(self.connection_params.get('port', 27017)))
+            self.mongo_user.setText(self.connection_params.get('user', ''))
+            self.mongo_password.setText(self.connection_params.get('password', ''))
+
+            save_password = self.connection_params.get('save_password', False)
+            if isinstance(save_password, bool):
+                self.mongo_save_password.setChecked(save_password)
+            else:
+                self.mongo_save_password.setChecked(str(save_password).lower() == 'true')
+
+            self.mongo_auth_database.setText(self.connection_params.get('auth_database', 'admin'))
+            self.mongo_database.setText(self.connection_params.get('database', ''))
     
     def get_connection_params(self) -> Dict[str, Any]:
         """Get the connection parameters from the dialog
@@ -321,5 +374,13 @@ class ConnectionDialog(QDialog):
             connection_params['database'] = self.pg_database.text()
         elif connection_params['type'] == 'SQLite':
             connection_params['database'] = self.sqlite_file.text()
-        
+        elif connection_params['type'] == 'MongoDB':
+            connection_params['host'] = self.mongo_host.text()
+            connection_params['port'] = self.mongo_port.value()
+            connection_params['user'] = self.mongo_user.text()
+            connection_params['password'] = self.mongo_password.text()
+            connection_params['save_password'] = self.mongo_save_password.isChecked()
+            connection_params['auth_database'] = self.mongo_auth_database.text()
+            connection_params['database'] = self.mongo_database.text()
+
         return connection_params

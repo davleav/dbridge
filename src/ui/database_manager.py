@@ -131,9 +131,10 @@ class DatabaseManagerDialog(QDialog):
         self.indexes_tab = self._create_indexes_tab()
         
         # Add tabs to the tab widget
+        is_mongodb = self.connection.params.get('type') == 'MongoDB'
         self.tabs.addTab(self.database_tab, "Databases")
-        self.tabs.addTab(self.tables_tab, "Tables")
-        self.tabs.addTab(self.columns_tab, "Columns")
+        self.tabs.addTab(self.tables_tab, "Collections" if is_mongodb else "Tables")
+        self.tabs.addTab(self.columns_tab, "Fields" if is_mongodb else "Columns")
         self.tabs.addTab(self.indexes_tab, "Indexes")
         
         layout.addWidget(self.tabs)
@@ -174,36 +175,39 @@ class DatabaseManagerDialog(QDialog):
         return tab
     
     def _create_tables_tab(self):
-        """Create the tables management tab"""
+        """Create the tables/collections management tab"""
         tab = TablesTab()
         layout = QVBoxLayout(tab)
-        
+
+        is_mongodb = self.connection.params.get('type') == 'MongoDB'
+        entity_label = "Collection" if is_mongodb else "Table"
+
         # Database selector
         db_layout = QHBoxLayout()
         db_layout.addWidget(QLabel("Database:"))
         db_selector = QComboBox()
         db_layout.addWidget(db_selector)
         layout.addLayout(db_layout)
-        
-        # Tables list
-        layout.addWidget(QLabel("Tables:"))
+
+        # Tables/Collections list
+        layout.addWidget(QLabel(f"{entity_label}s:"))
         tables_list = QListWidget()
         layout.addWidget(tables_list)
-        
+
         # Buttons
         buttons_layout = QHBoxLayout()
-        create_table_button = QPushButton("Create Table")
-        drop_table_button = QPushButton("Drop Table")
+        create_table_button = QPushButton(f"Create {entity_label}")
+        drop_table_button = QPushButton(f"Drop {entity_label}")
         buttons_layout.addWidget(create_table_button)
         buttons_layout.addWidget(drop_table_button)
         layout.addLayout(buttons_layout)
-        
+
         # Store references to the widgets
         tab.db_selector = db_selector
         tab.tables_list = tables_list
         tab.create_table_button = create_table_button
         tab.drop_table_button = drop_table_button
-        
+
         return tab
     
     def _create_columns_tab(self):
@@ -746,7 +750,13 @@ class DatabaseManagerDialog(QDialog):
                     QMessageBox.critical(self, "Error", f"Failed to drop database: {str(e)}")
     
     def _create_table(self):
-        """Create a new table"""
+        """Create a new table or MongoDB collection"""
+        is_mongodb = self.connection.params.get('type') == 'MongoDB'
+
+        if is_mongodb:
+            self._create_mongodb_collection()
+            return
+
         # Get the selected database from the tables tab
         database_name = self.tables_tab.db_selector.currentText()
         if not database_name:
@@ -896,7 +906,13 @@ class DatabaseManagerDialog(QDialog):
                 QMessageBox.critical(self, "Error", f"Failed to create table: {str(e)}")
     
     def _drop_table(self):
-        """Drop the selected table"""
+        """Drop the selected table or MongoDB collection"""
+        is_mongodb = self.connection.params.get('type') == 'MongoDB'
+
+        if is_mongodb:
+            self._drop_mongodb_collection()
+            return
+
         # Get the selected database and table
         database_name = self.tables_tab.db_selector.currentText()
         if not database_name:
@@ -956,7 +972,66 @@ class DatabaseManagerDialog(QDialog):
             except Exception as e:
                 if not self._test_mode:
                     QMessageBox.critical(self, "Error", f"Failed to drop table: {str(e)}")
-    
+
+    def _create_mongodb_collection(self):
+        """Create a new MongoDB collection via an input dialog"""
+        collection_name, ok = QInputDialog.getText(
+            self, "Create Collection", "Collection name:"
+        )
+        if not ok or not collection_name.strip():
+            return
+        collection_name = collection_name.strip()
+        try:
+            database_name = self.tables_tab.db_selector.currentText()
+            if database_name and database_name != self.connection.get_database_name():
+                self.connection.use_database(database_name)
+            self.connection.create_collection(collection_name)
+            self._populate_tables(self.connection.get_database_name())
+            self._populate_table_selectors(self.connection.get_database_name())
+            if not self._test_mode:
+                QMessageBox.information(
+                    self, "Success", f"Collection '{collection_name}' created successfully."
+                )
+        except Exception as e:
+            if not self._test_mode:
+                QMessageBox.critical(self, "Error", f"Failed to create collection: {str(e)}")
+
+    def _drop_mongodb_collection(self):
+        """Drop the selected MongoDB collection"""
+        selected_items = self.tables_tab.tables_list.selectedItems()
+        if not selected_items:
+            if not self._test_mode:
+                QMessageBox.warning(self, "Warning", "Please select a collection to drop.")
+            return
+
+        collection_name = selected_items[0].text()
+
+        if self._test_mode:
+            reply = QMessageBox.StandardButton.Yes
+        else:
+            reply = QMessageBox.question(
+                self, "Confirm Drop",
+                f"Are you sure you want to drop the collection '{collection_name}'?\nThis action cannot be undone!",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                database_name = self.tables_tab.db_selector.currentText()
+                if database_name and database_name != self.connection.get_database_name():
+                    self.connection.use_database(database_name)
+                self.connection.drop_collection(collection_name)
+                self._populate_tables(self.connection.get_database_name())
+                self._populate_table_selectors(self.connection.get_database_name())
+                if not self._test_mode:
+                    QMessageBox.information(
+                        self, "Success", f"Collection '{collection_name}' dropped successfully."
+                    )
+            except Exception as e:
+                if not self._test_mode:
+                    QMessageBox.critical(self, "Error", f"Failed to drop collection: {str(e)}")
+
     def _add_column(self):
         """Add a column to the selected table"""
         # Get the selected table

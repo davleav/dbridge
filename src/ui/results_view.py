@@ -5,12 +5,13 @@ Results view for displaying query results
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTableView, QHeaderView,
     QToolBar, QLabel, QComboBox, QPushButton, QFileDialog,
-    QHBoxLayout
+    QHBoxLayout, QTabWidget, QPlainTextEdit
 )
 from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QFont
 
 import csv
+import json
 import pandas as pd
 
 from src.ui.row_detail_dialog import RowDetailDialog
@@ -103,6 +104,9 @@ class ResultsView(QWidget):
         
         layout.addWidget(toolbar)
         
+        # Tab widget to hold table view + JSON view
+        self.view_tabs = QTabWidget()
+
         # Results table
         self.table_view = QTableView()
         self.table_view.setAlternatingRowColors(True)
@@ -117,19 +121,53 @@ class ResultsView(QWidget):
         
         # Connect double-click signal to show row details
         self.table_view.doubleClicked.connect(self._show_row_details)
+        # Connect selection change to update JSON view
+        self.table_view.clicked.connect(self._update_json_view)
         
         self.table_model = ResultsTableModel()
         self.table_view.setModel(self.table_model)
-        
-        layout.addWidget(self.table_view)
+
+        self.view_tabs.addTab(self.table_view, "Table")
+
+        # JSON view for inspecting individual documents
+        self.json_view = QPlainTextEdit()
+        self.json_view.setReadOnly(True)
+        mono_font = QFont("Courier New", 10)
+        self.json_view.setFont(mono_font)
+        self.view_tabs.addTab(self.json_view, "JSON View")
+
+        layout.addWidget(self.view_tabs)
     
     def set_data(self, data):
         """Set the results data"""
         self.table_model.set_data(data)
         self.row_count_label.setText(f"{len(data)} rows")
+        self.json_view.clear()
         
         # Auto-resize columns to content
         self.table_view.resizeColumnsToContents()
+
+    def _update_json_view(self, index):
+        """Update the JSON view to show the selected row as formatted JSON"""
+        if not index.isValid() or self.table_model.rowCount() == 0:
+            return
+
+        row_index = index.row()
+        row_dict = {}
+        for col in range(self.table_model.columnCount()):
+            col_name = str(self.table_model._data.columns[col])
+            value = self.table_model._data.iloc[row_index, col]
+            if pd.isna(value):
+                row_dict[col_name] = None
+            else:
+                row_dict[col_name] = value if not isinstance(value, float) else value
+
+        try:
+            formatted = json.dumps(row_dict, indent=2, default=str)
+        except Exception:
+            formatted = str(row_dict)
+
+        self.json_view.setPlainText(formatted)
         
     def set_connection(self, connection):
         """Set the database connection for this results view

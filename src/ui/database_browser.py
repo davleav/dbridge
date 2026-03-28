@@ -58,6 +58,8 @@ class DatabaseTreeModel(QStandardItemModel):
         # Check if a database is selected
         has_database_selected = db_name != "(No database selected)"
         
+        is_mongodb = self.connection.params.get('type') == 'MongoDB'
+
         if not has_database_selected:
             # If no database is selected, only show available databases folder
             # 1. Available Databases folder
@@ -70,9 +72,11 @@ class DatabaseTreeModel(QStandardItemModel):
                 databases = self.connection.get_available_databases()
                 
                 # Filter out system databases if the option is disabled
-                if not self.connection.connection_manager.get_show_system_databases():
+                if not is_mongodb and not self.connection.connection_manager.get_show_system_databases():
                     databases = [db for db in databases if not self.connection.is_system_database(db)]
-                    
+                elif is_mongodb and not self.connection.connection_manager.get_show_system_databases():
+                    databases = [db for db in databases if not self.connection.is_system_database(db)]
+
                 for db in databases:
                     db_item_child = QStandardItem(db)
                     db_item_child.setData("available_database", Qt.ItemDataRole.UserRole)
@@ -83,9 +87,56 @@ class DatabaseTreeModel(QStandardItemModel):
                 error_item = QStandardItem("Error loading databases")
                 error_item.setData("message", Qt.ItemDataRole.UserRole)
                 databases_item.appendRow(error_item)
+        elif is_mongodb:
+            # MongoDB: show Collections folder
+            collections_item = QStandardItem("Collections")
+            collections_item.setData("collections_folder", Qt.ItemDataRole.UserRole)
+            db_item.appendRow(collections_item)
+
+            try:
+                collections = self.connection.get_collections()
+                for collection in collections:
+                    coll_item = QStandardItem(collection)
+                    coll_item.setData("table", Qt.ItemDataRole.UserRole)
+                    coll_item.setData(collection, Qt.ItemDataRole.UserRole + 1)
+                    collections_item.appendRow(coll_item)
+
+                    # Add Fields folder (sampled schema)
+                    fields_item = QStandardItem("Fields")
+                    fields_item.setData("columns_folder", Qt.ItemDataRole.UserRole)
+                    coll_item.appendRow(fields_item)
+
+                    try:
+                        columns = self.connection.get_columns(collection)
+                        for column in columns:
+                            column_item = QStandardItem(f"{column['name']} ({column['type']})")
+                            column_item.setData("column", Qt.ItemDataRole.UserRole)
+                            column_item.setData(column, Qt.ItemDataRole.UserRole + 1)
+                            fields_item.appendRow(column_item)
+                    except Exception:
+                        pass
+
+                    # Add Indexes folder
+                    indexes_item = QStandardItem("Indexes")
+                    indexes_item.setData("indexes_folder", Qt.ItemDataRole.UserRole)
+                    coll_item.appendRow(indexes_item)
+
+                    try:
+                        indexes = self.connection.get_indexes(collection)
+                        for index in indexes:
+                            index_item = QStandardItem(index['name'])
+                            index_item.setData("index", Qt.ItemDataRole.UserRole)
+                            index_item.setData(index, Qt.ItemDataRole.UserRole + 1)
+                            indexes_item.appendRow(index_item)
+                    except Exception:
+                        pass
+            except Exception as e:
+                no_item = QStandardItem("No collections found")
+                no_item.setData("message", Qt.ItemDataRole.UserRole)
+                collections_item.appendRow(no_item)
         else:
-            # Only show tables and views when a database is selected
-            
+            # SQL: show tables and views when a database is selected
+
             # Add tables folder
             tables_item = QStandardItem("Tables")
             tables_item.setData("tables_folder", Qt.ItemDataRole.UserRole)
@@ -548,10 +599,18 @@ class DatabaseBrowser(QWidget):
             QMessageBox.critical(self, "Database Error", f"Error deselecting database: {str(e)}")
     
     def _generate_select_query(self, table_name):
-        """Generate a SELECT query for the table/view"""
-        query = f"SELECT * FROM {table_name} LIMIT 50;"
-        
-        # Emit the signal with the generated query
+        """Generate a SELECT/find query for the table or collection"""
+        connection = self.tree_model.connection
+        if connection is not None and connection.params.get('type') == 'MongoDB':
+            import json as _json
+            query = _json.dumps({
+                "collection": table_name,
+                "filter": {},
+                "limit": 50,
+            }, indent=2)
+        else:
+            query = f"SELECT * FROM {table_name} LIMIT 50;"
+
         self.query_generated.emit(query)
     
     def _show_table_structure(self, table_name):
