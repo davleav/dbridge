@@ -683,6 +683,295 @@ class DatabaseConnection:
             raise
 
 
+class MongoConnection:
+    """Class representing a MongoDB database connection"""
+
+    params: Dict[str, Any]
+    client: Optional[Any]
+    db: Optional[Any]
+    user_permissions: Dict[str, bool]
+    connection_manager: Optional[Any] = None
+
+    def __init__(self, connection_params: Dict[str, Any]):
+        self.params = connection_params
+        self.client = None
+        self.db = None
+        self.user_permissions = {
+            'can_create_database': True,
+            'can_drop_database': True,
+            'is_admin': False,
+        }
+        self._connect()
+
+    def _connect(self) -> None:
+        from pymongo import MongoClient
+        import urllib.parse
+
+        host = self.params.get('host', 'localhost')
+        port = int(self.params.get('port', 27017))
+        user = self.params.get('user', '')
+        password = self.params.get('password', '')
+        auth_db = self.params.get('auth_database', 'admin')
+
+        if user and password:
+            encoded_user = urllib.parse.quote_plus(user)
+            encoded_password = urllib.parse.quote_plus(password)
+            uri = f"mongodb://{encoded_user}:{encoded_password}@{host}:{port}/{auth_db}"
+        else:
+            uri = f"mongodb://{host}:{port}/"
+
+        self.client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        self.client.admin.command('ping')
+
+        database = self.params.get('database', '')
+        if database:
+            self.db = self.client[database]
+        else:
+            self.db = None
+
+    def execute_query(self, query_str: str) -> 'pd.DataFrame':
+        """Execute a MongoDB find/aggregate query given as a JSON string.
+
+        Query format::
+
+            {"collection": "name", "filter": {}, "projection": {},
+             "limit": 50, "sort": {"field": 1}}
+
+        For aggregation pipelines::
+
+            {"collection": "name", "operation": "aggregate",
+             "pipeline": [{...}, ...]}
+        """
+        if self.db is None:
+            raise ValueError("No database selected")
+
+        try:
+            query = json.loads(query_str)
+        except (json.JSONDecodeError, TypeError) as e:
+            raise ValueError(f"Invalid JSON query: {e}")
+
+        collection_name = query.get('collection')
+        if not collection_name:
+            raise ValueError("Query must specify 'collection'")
+
+        collection = self.db[collection_name]
+        operation = query.get('operation', 'find')
+
+        if operation == 'aggregate':
+            pipeline = query.get('pipeline', [])
+            docs = list(collection.aggregate(pipeline))
+        else:
+            filter_doc = query.get('filter', {})
+            projection = query.get('projection', None)
+            limit = int(query.get('limit', 0))
+            sort = query.get('sort', None)
+
+            cursor = collection.find(filter_doc, projection)
+            if sort:
+                cursor = cursor.sort(list(sort.items()))
+            if limit:
+                cursor = cursor.limit(limit)
+            docs = list(cursor)
+
+        if not docs:
+            return pd.DataFrame()
+
+        df = pd.json_normalize(docs)
+        for col in df.columns:
+            df[col] = df[col].apply(
+                lambda x: str(x) if x.__class__.__name__ in ('ObjectId', 'Decimal128') else x
+            )
+        return df
+
+    def execute_non_query(self, query_str: str) -> int:
+        """Execute a MongoDB write operation given as a JSON string.
+
+        Supported operations: insert_one, insert_many, update_one,
+        update_many, delete_one, delete_many, create_collection,
+        drop_collection.
+        """
+        if self.db is None:
+            raise ValueError("No database selected")
+
+        try:
+            query = json.loads(query_str)
+        except (json.JSONDecodeError, TypeError) as e:
+            raise ValueError(f"Invalid JSON query: {e}")
+
+        operation = query.get('operation', 'insert_one')
+        collection_name = query.get('collection')
+
+        if operation == 'create_collection':
+            name = query.get('name', collection_name)
+            self.db.create_collection(name)
+            return 0
+
+        if operation == 'drop_collection':
+            name = query.get('name', collection_name)
+            self.db[name].drop()
+            return 0
+
+        if not collection_name:
+            raise ValueError("Query must specify 'collection'")
+
+        collection = self.db[collection_name]
+
+        if operation == 'insert_one':
+            collection.insert_one(query.get('document', {}))
+            return 1
+        elif operation == 'insert_many':
+            result = collection.insert_many(query.get('documents', []))
+            return len(result.inserted_ids)
+        elif operation == 'update_one':
+            result = collection.update_one(query.get('filter', {}), query.get('update', {}))
+            return result.modified_count
+        elif operation == 'update_many':
+            result = collection.update_many(query.get('filter', {}), query.get('update', {}))
+            return result.modified_count
+        elif operation == 'delete_one':
+            result = collection.delete_one(query.get('filter', {}))
+            return result.deleted_count
+        elif operation == 'delete_many':
+            result = collection.delete_many(query.get('filter', {}))
+            return result.deleted_count
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+
+    def get_database_name(self) -> str:
+        if self.db is not None:
+            return self.db.name
+        return "(No database selected)"
+
+    def get_tables(self) -> List[str]:
+        return self.get_collections()
+
+    def get_collections(self) -> List[str]:
+        if self.db is None:
+            return []
+        try:
+            return self.db.list_collection_names()
+        except Exception as e:
+            print(f"Error getting collections: {e}")
+            return []
+
+    def get_views(self) -> List[str]:
+        return []
+
+    def get_columns(self, collection_name: str) -> List[Dict[str, Any]]:
+        if self.db is None:
+            return []
+        try:
+            collection = self.db[collection_name]
+            docs = list(collection.find({}, limit=10))
+            if not docs:
+                return [{'name': '_id', 'type': 'ObjectId'}]
+            fields: Dict[str, str] = {}
+            for doc in docs:
+                for key, value in doc.items():
+                    if key not in fields:
+                        fields[key] = type(value).__name__
+            return [{'name': name, 'type': typ} for name, typ in fields.items()]
+        except Exception as e:
+            print(f"Error getting fields for collection '{collection_name}': {e}")
+            return []
+
+    def get_primary_key(self, collection_name: str) -> List[str]:
+        return ['_id']
+
+    def get_foreign_keys(self, collection_name: str) -> List[Any]:
+        return []
+
+    def get_indexes(self, collection_name: str) -> List[Dict[str, Any]]:
+        if self.db is None:
+            return []
+        try:
+            collection = self.db[collection_name]
+            indexes = list(collection.list_indexes())
+            return [
+                {'name': idx.get('name', ''), 'columns': list(idx.get('key', {}).keys())}
+                for idx in indexes
+            ]
+        except Exception as e:
+            print(f"Error getting indexes for collection '{collection_name}': {e}")
+            return []
+
+    def get_available_databases(self) -> List[str]:
+        if self.client is None:
+            return []
+        try:
+            return self.client.list_database_names()
+        except Exception as e:
+            print(f"Error getting available databases: {e}")
+            return []
+
+    def use_database(self, database_name: str) -> bool:
+        if not database_name or database_name == self.get_database_name():
+            return False
+        try:
+            self.params['database'] = database_name
+            self.db = self.client[database_name]
+            if hasattr(self, 'connection_manager') and self.connection_manager:
+                connection_name = self.params['name']
+                if connection_name in self.connection_manager.connection_params:
+                    self.connection_manager.connection_params[connection_name]['database'] = database_name
+                    self.connection_manager.save_connections()
+            return True
+        except Exception as e:
+            print(f"Error switching to database {database_name}: {e}")
+            return False
+
+    def deselect_database(self) -> bool:
+        if self.get_database_name() == "(No database selected)":
+            return False
+        try:
+            if 'database' in self.params:
+                del self.params['database']
+            self.db = None
+            if hasattr(self, 'connection_manager') and self.connection_manager:
+                connection_name = self.params['name']
+                if connection_name in self.connection_manager.connection_params:
+                    if 'database' in self.connection_manager.connection_params[connection_name]:
+                        del self.connection_manager.connection_params[connection_name]['database']
+                    self.connection_manager.save_connections()
+            return True
+        except Exception as e:
+            print(f"Error deselecting database: {e}")
+            return False
+
+    def is_system_database(self, database_name: str) -> bool:
+        system_databases = ['admin', 'local', 'config']
+        return database_name.lower() in system_databases
+
+    def can_create_database(self) -> bool:
+        return self.user_permissions.get('can_create_database', False)
+
+    def can_drop_database(self) -> bool:
+        return self.user_permissions.get('can_drop_database', False)
+
+    def is_admin(self) -> bool:
+        return self.user_permissions.get('is_admin', False)
+
+    def create_collection(self, collection_name: str) -> None:
+        if self.db is None:
+            raise ValueError("No database selected")
+        self.db.create_collection(collection_name)
+
+    def drop_collection(self, collection_name: str) -> None:
+        if self.db is None:
+            raise ValueError("No database selected")
+        self.db[collection_name].drop()
+
+    def export_database_to_sql(self, file_path: str, tables: Optional[List[str]] = None) -> bool:
+        raise ValueError("SQL export is not supported for MongoDB connections")
+
+    def import_sql_file(self, file_path: str) -> bool:
+        raise ValueError("SQL import is not supported for MongoDB connections")
+
+    def close(self) -> None:
+        if self.client:
+            self.client.close()
+
+
 class ConnectionManager(QObject):
     """Manager for database connections"""
     
@@ -770,7 +1059,10 @@ class ConnectionManager(QObject):
     
     def create_connection(self, connection_params):
         """Create a new database connection"""
-        connection = DatabaseConnection(connection_params)
+        if connection_params.get('type') == 'MongoDB':
+            connection = MongoConnection(connection_params)
+        else:
+            connection = DatabaseConnection(connection_params)
         
         # Set a reference to the connection manager in the connection object
         # This allows the connection to update its parameters in the manager

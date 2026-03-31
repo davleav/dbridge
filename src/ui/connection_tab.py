@@ -53,6 +53,8 @@ class ConnectionTab(QWidget):
         
         # Query editor
         self.query_editor = QueryEditor()
+        if self.connection.params.get('type') == 'MongoDB':
+            self.query_editor.set_mode('mongodb')
         editor_results_splitter.addWidget(self.query_editor)
         
         # Results area with tabs
@@ -89,8 +91,13 @@ class ConnectionTab(QWidget):
         query = self.query_editor.get_query()
         if not query.strip():
             return
-        
+
         try:
+            is_mongodb = self.connection.params.get('type') == 'MongoDB'
+
+            if is_mongodb:
+                return self._run_mongodb_query(query)
+
             # Determine if this is a SELECT query or a non-query statement
             split_query = query.strip().upper().split(None, 1)
             query_type = split_query[0] if split_query else ""
@@ -114,6 +121,39 @@ class ConnectionTab(QWidget):
                     if hasattr(self.db_browser, 'tree_model') and self.db_browser.tree_model:
                         self.db_browser.tree_model.refresh()
                 
+                return True, f"{affected_rows} row(s) affected on {self.connection.params['name']}"
+        except Exception as e:
+            QMessageBox.critical(self, "Query Error", str(e))
+            return False, "Query failed"
+
+    def _run_mongodb_query(self, query):
+        """Execute a MongoDB JSON query string."""
+        import json
+        import pandas as pd
+
+        try:
+            parsed = json.loads(query)
+        except (json.JSONDecodeError, ValueError) as e:
+            QMessageBox.critical(self, "Query Error", f"Invalid JSON: {e}")
+            return False, "Query failed"
+
+        operation = parsed.get('operation', 'find')
+        read_operations = {'find', 'aggregate'}
+
+        try:
+            if operation in read_operations:
+                result = self.connection.execute_query(query)
+                self.results_view.set_data(result)
+                return True, f"Query executed successfully on {self.connection.params['name']}"
+            else:
+                affected_rows = self.connection.execute_non_query(query)
+                result = pd.DataFrame([{'Affected Rows': affected_rows}])
+                self.results_view.set_data(result)
+
+                if hasattr(self, 'db_browser') and self.db_browser:
+                    if hasattr(self.db_browser, 'tree_model') and self.db_browser.tree_model:
+                        self.db_browser.tree_model.refresh()
+
                 return True, f"{affected_rows} row(s) affected on {self.connection.params['name']}"
         except Exception as e:
             QMessageBox.critical(self, "Query Error", str(e))
