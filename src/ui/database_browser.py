@@ -2,6 +2,7 @@
 Database browser for exploring database structure
 """
 
+import json
 import os
 import subprocess
 
@@ -205,8 +206,11 @@ class DatabaseTreeModel(QStandardItemModel):
 class DatabaseBrowser(QWidget):
     """Widget for browsing database structure"""
     
-    # Signal to emit when a query is generated
+    # Signal to emit when a query is generated (will be auto-run)
     query_generated = pyqtSignal(str)
+
+    # Signal to emit when a query template is loaded (set in editor without auto-running)
+    query_template_loaded = pyqtSignal(str)
     
     # Signal to emit when the database is changed
     database_changed = pyqtSignal(str)
@@ -441,10 +445,19 @@ class DatabaseBrowser(QWidget):
             table_name = item.data(Qt.ItemDataRole.UserRole + 1)
             if table_name is None:
                 return
-            
-            select_action = QAction("Select All Rows", self)
+
+            connection = self.tree_model.connection
+            is_mongodb = connection is not None and connection.params.get('type') == 'MongoDB'
+
+            select_label = "Find All Documents" if is_mongodb else "Select All Rows"
+            select_action = QAction(select_label, self)
             select_action.triggered.connect(lambda: self._generate_select_query(table_name))
             menu.addAction(select_action)
+
+            if is_mongodb:
+                insert_action = QAction("Insert Document...", self)
+                insert_action.triggered.connect(lambda: self._generate_insert_query(table_name))
+                menu.addAction(insert_action)
             
             menu.addSeparator()
             
@@ -456,10 +469,11 @@ class DatabaseBrowser(QWidget):
             
             # Export options
             export_menu = QMenu("Export", menu)
-            
-            export_sql_action = QAction("Export as SQL...", self)
-            export_sql_action.triggered.connect(lambda: self._export_table(table_name, "sql"))
-            export_menu.addAction(export_sql_action)
+
+            if not is_mongodb:
+                export_sql_action = QAction("Export as SQL...", self)
+                export_sql_action.triggered.connect(lambda: self._export_table(table_name, "sql"))
+                export_menu.addAction(export_sql_action)
             
             export_csv_action = QAction("Export as CSV...", self)
             export_csv_action.triggered.connect(lambda: self._export_table(table_name, "csv"))
@@ -602,8 +616,7 @@ class DatabaseBrowser(QWidget):
         """Generate a SELECT/find query for the table or collection"""
         connection = self.tree_model.connection
         if connection is not None and connection.params.get('type') == 'MongoDB':
-            import json as _json
-            query = _json.dumps({
+            query = json.dumps({
                 "collection": table_name,
                 "filter": {},
                 "limit": 50,
@@ -613,6 +626,28 @@ class DatabaseBrowser(QWidget):
 
         self.query_generated.emit(query)
     
+    def _generate_insert_query(self, collection_name):
+        """Generate an insert_one JSON template for a MongoDB collection and load it into the editor"""
+        connection = self.tree_model.connection
+        fields = {}
+        if connection is not None:
+            try:
+                columns = connection.get_columns(collection_name)
+                for col in columns:
+                    if col['name'] == '_id':
+                        continue
+                    fields[col['name']] = f"<{col['type']}>"
+            except Exception:
+                pass
+        if not fields:
+            fields = {"field1": "value1", "field2": "value2"}
+        query = json.dumps({
+            "collection": collection_name,
+            "operation": "insert_one",
+            "document": fields,
+        }, indent=2)
+        self.query_template_loaded.emit(query)
+
     def _show_table_structure(self, table_name):
         """Show the table structure"""
         # This would display the table structure in a dialog or new tab

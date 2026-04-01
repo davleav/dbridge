@@ -459,5 +459,70 @@ class TestDatabaseBrowser(unittest.TestCase):
             self.assertTrue(mock_exec.called)
 
 
+class TestDatabaseBrowserMongoDB(unittest.TestCase):
+    """Tests for MongoDB-specific behaviour in DatabaseBrowser"""
+
+    def setUp(self):
+        self.browser = DatabaseBrowser()
+        self.mongo_connection = MagicMock()
+        self.mongo_connection.params = {'type': 'MongoDB', 'name': 'mongo_test'}
+        self.mongo_connection.get_database_name.return_value = 'testdb'
+        self.mongo_connection.get_collections.return_value = ['users', 'orders']
+        self.mongo_connection.get_columns.return_value = [
+            {'name': '_id', 'type': 'ObjectId'},
+            {'name': 'name', 'type': 'str'},
+            {'name': 'email', 'type': 'str'},
+        ]
+        self.mongo_connection.get_indexes.return_value = []
+        self.mongo_connection.connection_manager = MagicMock()
+        self.mongo_connection.connection_manager.get_show_system_databases.return_value = True
+        self.mongo_connection.connection_manager.system_databases_visibility_changed = MagicMock()
+        self.mongo_connection.connection_manager.system_databases_visibility_changed.disconnect = MagicMock(side_effect=Exception)
+        self.mongo_connection.connection_manager.system_databases_visibility_changed.connect = MagicMock()
+
+    def test_generate_insert_query_emits_template_signal(self):
+        """_generate_insert_query should emit query_template_loaded with an insert_one template"""
+        self.browser.tree_model.connection = self.mongo_connection
+        emitted = []
+        self.browser.query_template_loaded.connect(emitted.append)
+
+        self.browser._generate_insert_query('users')
+
+        self.assertEqual(len(emitted), 1)
+        import json
+        parsed = json.loads(emitted[0])
+        self.assertEqual(parsed['collection'], 'users')
+        self.assertEqual(parsed['operation'], 'insert_one')
+        self.assertIn('document', parsed)
+        self.assertNotIn('_id', parsed['document'])
+
+    def test_generate_insert_query_fallback_fields(self):
+        """_generate_insert_query should use generic fields when get_columns raises"""
+        self.browser.tree_model.connection = self.mongo_connection
+        self.mongo_connection.get_columns.side_effect = Exception('no columns')
+        emitted = []
+        self.browser.query_template_loaded.connect(emitted.append)
+
+        self.browser._generate_insert_query('things')
+
+        import json
+        parsed = json.loads(emitted[0])
+        self.assertIn('field1', parsed['document'])
+
+    def test_generate_insert_query_does_not_emit_query_generated(self):
+        """_generate_insert_query must not trigger the auto-run query_generated signal"""
+        self.browser.tree_model.connection = self.mongo_connection
+        auto_run = []
+        self.browser.query_generated.connect(auto_run.append)
+
+        self.browser._generate_insert_query('users')
+
+        self.assertEqual(auto_run, [])
+
+    def test_query_template_loaded_signal_exists(self):
+        """DatabaseBrowser should expose the query_template_loaded signal"""
+        self.assertIsNotNone(self.browser.query_template_loaded)
+
+
 if __name__ == '__main__':
     unittest.main()
