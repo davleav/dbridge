@@ -84,5 +84,39 @@ class TestConnectionTabDatabaseChanged(unittest.TestCase):
                 self.assertEqual(signal_handler, connection_tab._on_database_changed)
 
 
+class TestConnectionTabMongoDBSignals(unittest.TestCase):
+    """Tests for MongoDB signal wiring in ConnectionTab"""
+
+    def _make_mock_connection(self, conn_type='postgresql'):
+        mock = MagicMock()
+        mock.params = {'name': 'test', 'type': conn_type}
+        mock.connection_manager = MagicMock()
+        mock.connection_manager.system_databases_visibility_changed = MagicMock()
+        mock.connection_manager.system_databases_visibility_changed.disconnect = MagicMock(side_effect=Exception)
+        mock.connection_manager.system_databases_visibility_changed.connect = MagicMock()
+        mock.get_database_name.return_value = '(No database selected)'
+        mock.get_available_databases.return_value = []
+        return mock
+
+    def test_instantiation_does_not_raise(self):
+        """ConnectionTab.__init__ must not raise even for MongoDB connections"""
+        mock_connection = self._make_mock_connection('MongoDB')
+        with patch('PyQt6.QtWidgets.QMessageBox'):
+            try:
+                tab = ConnectionTab(mock_connection)
+                tab.close_connection()
+            except AttributeError as exc:
+                self.fail(f"ConnectionTab raised AttributeError: {exc}")
+
+    def test_query_template_loaded_connected_after_query_editor(self):
+        """query_template_loaded signal must be connected after query_editor is created"""
+        mock_connection = self._make_mock_connection()
+        tab = ConnectionTab(mock_connection)
+        self.assertTrue(hasattr(tab, 'query_editor'))
+        tab.db_browser.query_template_loaded.emit('{}')
+        self.assertEqual(tab.query_editor.get_query(), '{}')
+        tab.close_connection()
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -333,5 +333,48 @@ class TestResultsView(unittest.TestCase):
             mock_dialog.assert_not_called()
 
 
+class TestResultsViewMongoDB(unittest.TestCase):
+    """Tests for MongoDB-specific behaviour in ResultsView"""
+
+    def setUp(self):
+        self.view = ResultsView()
+        self.mongo_connection = MagicMock()
+        self.mongo_connection.params = {'type': 'MongoDB'}
+        self.view.set_connection(self.mongo_connection)
+
+        self.data = pd.DataFrame({
+            '_id': ['abc', 'def'],
+            'name': ['Alice', 'Bob'],
+            'age': [30, 25],
+        })
+
+    def test_set_data_switches_to_json_tab(self):
+        """set_data() should activate the JSON View tab for MongoDB connections"""
+        self.view.set_data(self.data)
+        self.assertEqual(self.view.view_tabs.currentIndex(), 1)
+
+    def test_set_data_populates_json_view(self):
+        """set_data() should populate the JSON view with all documents for MongoDB"""
+        self.view.set_data(self.data)
+        json_text = self.view.json_view.toPlainText()
+        self.assertTrue(json_text.strip().startswith('['))
+        self.assertIn('Alice', json_text)
+        self.assertIn('Bob', json_text)
+
+    def test_set_data_non_mongo_stays_on_table_tab(self):
+        """set_data() should NOT switch tab for non-MongoDB connections"""
+        sql_connection = MagicMock()
+        sql_connection.params = {'type': 'postgresql'}
+        self.view.set_connection(sql_connection)
+        self.view.set_data(self.data)
+        self.assertEqual(self.view.view_tabs.currentIndex(), 0)
+
+    def test_set_data_empty_does_not_switch_tab(self):
+        """set_data() with an empty DataFrame should not switch to JSON tab"""
+        self.view.view_tabs.setCurrentIndex(0)
+        self.view.set_data(pd.DataFrame())
+        self.assertEqual(self.view.view_tabs.currentIndex(), 0)
+
+
 if __name__ == '__main__':
     unittest.main()

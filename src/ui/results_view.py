@@ -147,6 +147,34 @@ class ResultsView(QWidget):
         # Auto-resize columns to content
         self.table_view.resizeColumnsToContents()
 
+        is_mongodb = (
+            self.connection is not None
+            and hasattr(self.connection, 'params')
+            and self.connection.params.get('type') == 'MongoDB'
+        )
+
+        if is_mongodb and len(data) > 0:
+            records = []
+            for i in range(len(data)):
+                row_dict = {}
+                for col in range(len(data.columns)):
+                    col_name = str(data.columns[col])
+                    value = data.iloc[i, col]
+                    try:
+                        if pd.isna(value):
+                            row_dict[col_name] = None
+                            continue
+                    except (TypeError, ValueError):
+                        pass
+                    row_dict[col_name] = value
+                records.append(row_dict)
+            try:
+                formatted = json.dumps(records, indent=2, default=str)
+            except Exception:
+                formatted = str(records)
+            self.json_view.setPlainText(formatted)
+            self.view_tabs.setCurrentIndex(1)
+
     def _update_json_view(self, index):
         """Update the JSON view to show the selected row as formatted JSON"""
         if not index.isValid() or self.table_model.rowCount() == 0:

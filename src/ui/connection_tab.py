@@ -56,6 +56,7 @@ class ConnectionTab(QWidget):
         if self.connection.params.get('type') == 'MongoDB':
             self.query_editor.set_mode('mongodb')
         editor_results_splitter.addWidget(self.query_editor)
+        self.db_browser.query_template_loaded.connect(self.query_editor.set_query)
         
         # Results area with tabs
         self.results_tabs = QTabWidget()
