@@ -961,6 +961,17 @@ class MongoConnection:
             raise ValueError("No database selected")
         self.db[collection_name].drop()
 
+    def create_database(self, database_name: str) -> None:
+        if self.client is None:
+            raise ValueError("No client connection")
+        db = self.client[database_name]
+        db.create_collection("_init")
+
+    def drop_database(self, database_name: str) -> None:
+        if self.client is None:
+            raise ValueError("No client connection")
+        self.client.drop_database(database_name)
+
     def export_database_to_sql(self, file_path: str, tables: Optional[List[str]] = None) -> bool:
         raise ValueError("SQL export is not supported for MongoDB connections")
 

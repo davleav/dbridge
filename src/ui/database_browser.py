@@ -743,9 +743,9 @@ class DatabaseBrowser(QWidget):
         # Create and show the database manager dialog
         # Set debug_mode to False to reduce console output
         dialog = DatabaseManagerDialog(self.tree_model.connection, self, debug_mode=False)
-        if dialog.exec():
-            # Refresh the tree view after changes
-            self.tree_model.refresh()
+        dialog.exec()
+        self.tree_model.refresh()
+        self._update_button_visibility(self.tree_model.connection)
     
     def _export_all_tables(self):
         """Export all tables in the database"""
