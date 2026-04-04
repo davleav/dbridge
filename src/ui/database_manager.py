@@ -397,8 +397,11 @@ class DatabaseManagerDialog(QDialog):
                 self.tables_tab.tables_list.addItem(table)
             
             # Switch back to the original database if needed
-            if current_db != database_name and current_db != "(No database selected)":
-                self.connection.use_database(current_db)
+            if current_db != database_name:
+                if current_db != "(No database selected)":
+                    self.connection.use_database(current_db)
+                else:
+                    self.connection.deselect_database()
         except Exception as e:
             if not self._test_mode:
                 QMessageBox.warning(self, "Error", f"Failed to retrieve tables: {str(e)}")
@@ -434,8 +437,11 @@ class DatabaseManagerDialog(QDialog):
                 self.indexes_tab.table_selector.addItem(table)
             
             # Switch back to the original database if needed
-            if current_db != database_name and current_db != "(No database selected)":
-                self.connection.use_database(current_db)
+            if current_db != database_name:
+                if current_db != "(No database selected)":
+                    self.connection.use_database(current_db)
+                else:
+                    self.connection.deselect_database()
                 
             # Unblock signals after populating
             self.columns_tab.table_selector.blockSignals(False)
@@ -685,8 +691,11 @@ class DatabaseManagerDialog(QDialog):
             
         if ok and db_name:
             try:
-                # Execute the CREATE DATABASE statement
-                self.connection.execute_non_query(f"CREATE DATABASE {db_name};")
+                is_mongodb = self.connection.params.get('type') == 'MongoDB'
+                if is_mongodb:
+                    self.connection.create_database(db_name)
+                else:
+                    self.connection.execute_non_query(f"CREATE DATABASE {db_name};")
                 
                 # Refresh the databases list
                 self._populate_databases()
@@ -737,8 +746,11 @@ class DatabaseManagerDialog(QDialog):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                # Execute the DROP DATABASE statement
-                self.connection.execute_non_query(f"DROP DATABASE {db_name};")
+                is_mongodb = self.connection.params.get('type') == 'MongoDB'
+                if is_mongodb:
+                    self.connection.drop_database(db_name)
+                else:
+                    self.connection.execute_non_query(f"DROP DATABASE {db_name};")
                 
                 # Refresh the databases list
                 self._populate_databases()
