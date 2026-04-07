@@ -83,9 +83,13 @@ class DatabaseTreeModel(QStandardItemModel):
                     db_item_child.setData("available_database", Qt.ItemDataRole.UserRole)
                     db_item_child.setData(db, Qt.ItemDataRole.UserRole + 1)
                     databases_item.appendRow(db_item_child)
+                if not databases:
+                    empty_item = QStandardItem("(No databases found)")
+                    empty_item.setData("message", Qt.ItemDataRole.UserRole)
+                    databases_item.appendRow(empty_item)
             except Exception as e:
                 print(f"Error getting available databases: {e}")
-                error_item = QStandardItem("Error loading databases")
+                error_item = QStandardItem(f"Error: {e}")
                 error_item.setData("message", Qt.ItemDataRole.UserRole)
                 databases_item.appendRow(error_item)
         elif is_mongodb:
