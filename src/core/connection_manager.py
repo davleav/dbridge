@@ -900,9 +900,14 @@ class MongoConnection:
             return []
         try:
             return self.client.list_database_names()
-        except Exception as e:
-            print(f"Error getting available databases: {e}")
-            return []
+        except Exception:
+            try:
+                result = self.client.admin.command(
+                    "listDatabases", nameOnly=True, authorizedDatabases=True
+                )
+                return [db['name'] for db in result.get('databases', [])]
+            except Exception as e:
+                raise RuntimeError(f"Failed to list databases: {e}") from e
 
     def use_database(self, database_name: str) -> bool:
         if not database_name or database_name == self.get_database_name():
