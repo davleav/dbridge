@@ -3,14 +3,84 @@ Connection tab for managing a single database connection
 """
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QSplitter, QTabWidget, QLabel,
-    QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTabWidget, QLabel,
+    QMessageBox, QComboBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from src.ui.query_editor import QueryEditor
 from src.ui.results_view import ResultsView
 from src.ui.database_browser import DatabaseBrowser
+
+_MONGODB_OPERATIONS = [
+    'find', 'aggregate',
+    'insert_one', 'insert_many',
+    'update_one', 'update_many',
+    'delete_one', 'delete_many',
+    'create_collection', 'drop_collection',
+]
+
+_MONGODB_TEMPLATES = {
+    'find': {
+        "collection": "collection_name",
+        "filter": {},
+        "projection": None,
+        "limit": 50,
+        "sort": None,
+    },
+    'aggregate': {
+        "collection": "collection_name",
+        "operation": "aggregate",
+        "pipeline": [
+            {"$match": {}},
+            {"$limit": 50},
+        ],
+    },
+    'insert_one': {
+        "collection": "collection_name",
+        "operation": "insert_one",
+        "document": {"field1": "value1"},
+    },
+    'insert_many': {
+        "collection": "collection_name",
+        "operation": "insert_many",
+        "documents": [
+            {"field1": "value1"},
+            {"field1": "value2"},
+        ],
+    },
+    'update_one': {
+        "collection": "collection_name",
+        "operation": "update_one",
+        "filter": {"_id": "document_id"},
+        "update": {"$set": {"field": "new_value"}},
+    },
+    'update_many': {
+        "collection": "collection_name",
+        "operation": "update_many",
+        "filter": {},
+        "update": {"$set": {"field": "new_value"}},
+    },
+    'delete_one': {
+        "collection": "collection_name",
+        "operation": "delete_one",
+        "filter": {"_id": "document_id"},
+    },
+    'delete_many': {
+        "collection": "collection_name",
+        "operation": "delete_many",
+        "filter": {},
+    },
+    'create_collection': {
+        "operation": "create_collection",
+        "name": "new_collection_name",
+    },
+    'drop_collection': {
+        "operation": "drop_collection",
+        "name": "collection_name",
+    },
+}
+
 
 class ConnectionTab(QWidget):
     """Widget representing a single database connection tab"""
@@ -51,12 +121,31 @@ class ConnectionTab(QWidget):
         # Create a vertical splitter for query editor and results
         editor_results_splitter = QSplitter(Qt.Orientation.Vertical)
         
-        # Query editor
+        # Query editor area
+        is_mongodb = self.connection.params.get('type') == 'MongoDB'
+        query_editor_widget = QWidget()
+        query_editor_layout = QVBoxLayout(query_editor_widget)
+        query_editor_layout.setContentsMargins(0, 0, 0, 0)
+        query_editor_layout.setSpacing(2)
+
+        if is_mongodb:
+            op_row = QHBoxLayout()
+            op_label = QLabel("Operation:")
+            self.mongodb_operation = QComboBox()
+            self.mongodb_operation.addItems(_MONGODB_OPERATIONS)
+            op_row.addWidget(op_label)
+            op_row.addWidget(self.mongodb_operation)
+            op_row.addStretch()
+            query_editor_layout.addLayout(op_row)
+
         self.query_editor = QueryEditor()
-        if self.connection.params.get('type') == 'MongoDB':
+        if is_mongodb:
             self.query_editor.set_mode('mongodb')
-        editor_results_splitter.addWidget(self.query_editor)
-        self.db_browser.query_template_loaded.connect(self.query_editor.set_query)
+            self.mongodb_operation.currentTextChanged.connect(self._on_mongodb_operation_changed)
+            self._on_mongodb_operation_changed('find')
+        query_editor_layout.addWidget(self.query_editor)
+        editor_results_splitter.addWidget(query_editor_widget)
+        self.db_browser.query_template_loaded.connect(self._load_query_template)
         
         # Results area with tabs
         self.results_tabs = QTabWidget()
@@ -83,9 +172,30 @@ class ConnectionTab(QWidget):
     
     def _set_query_text(self, query):
         """Set the query text in the editor and automatically run it"""
-        self.query_editor.set_query(query)
-        # Automatically run the query after setting it and return the result
+        self._load_query_template(query)
         return self.run_query()
+
+    def _load_query_template(self, query):
+        """Load a query template into the editor, syncing the operation combobox for MongoDB."""
+        self.query_editor.set_query(query)
+        if hasattr(self, 'mongodb_operation'):
+            import json as _json
+            try:
+                parsed = _json.loads(query)
+                op = parsed.get('operation', 'find')
+                idx = self.mongodb_operation.findText(op)
+                if idx >= 0:
+                    self.mongodb_operation.blockSignals(True)
+                    self.mongodb_operation.setCurrentIndex(idx)
+                    self.mongodb_operation.blockSignals(False)
+            except (ValueError, AttributeError):
+                pass
+
+    def _on_mongodb_operation_changed(self, operation):
+        """Load a JSON template for the selected MongoDB operation into the editor."""
+        import json as _json
+        template = _MONGODB_TEMPLATES.get(operation, {})
+        self.query_editor.set_query(_json.dumps(template, indent=2))
     
     def run_query(self):
         """Execute the current query in the editor"""
