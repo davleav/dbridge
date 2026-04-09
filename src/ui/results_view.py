@@ -42,9 +42,11 @@ class ResultsTableModel(QAbstractTableModel):
         
         if role == Qt.ItemDataRole.DisplayRole:
             value = self._data.iloc[index.row(), index.column()]
-            # Handle None/NaN values
-            if pd.isna(value):
-                return "NULL"
+            try:
+                if pd.isna(value):
+                    return "NULL"
+            except (TypeError, ValueError):
+                pass
             return str(value)
         
         return None
@@ -185,10 +187,13 @@ class ResultsView(QWidget):
         for col in range(self.table_model.columnCount()):
             col_name = str(self.table_model._data.columns[col])
             value = self.table_model._data.iloc[row_index, col]
-            if pd.isna(value):
-                row_dict[col_name] = None
-            else:
-                row_dict[col_name] = value if not isinstance(value, float) else value
+            try:
+                if pd.isna(value):
+                    row_dict[col_name] = None
+                    continue
+            except (TypeError, ValueError):
+                pass
+            row_dict[col_name] = value if not isinstance(value, float) else value
 
         try:
             formatted = json.dumps(row_dict, indent=2, default=str)
