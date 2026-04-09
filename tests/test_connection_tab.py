@@ -118,5 +118,105 @@ class TestConnectionTabMongoDBSignals(unittest.TestCase):
         tab.close_connection()
 
 
+class TestConnectionTabMongoDBOperationSelector(unittest.TestCase):
+    """Tests for the MongoDB operation selector in ConnectionTab"""
+
+    def _make_mongodb_connection(self):
+        mock = MagicMock()
+        mock.params = {'name': 'test', 'type': 'MongoDB'}
+        mock.connection_manager = MagicMock()
+        mock.connection_manager.system_databases_visibility_changed = MagicMock()
+        mock.connection_manager.system_databases_visibility_changed.disconnect = MagicMock(side_effect=Exception)
+        mock.connection_manager.system_databases_visibility_changed.connect = MagicMock()
+        mock.get_database_name.return_value = '(No database selected)'
+        mock.get_available_databases.return_value = []
+        return mock
+
+    def test_mongodb_operation_combobox_exists(self):
+        """MongoDB connections should have an operation combobox"""
+        tab = ConnectionTab(self._make_mongodb_connection())
+        self.assertTrue(hasattr(tab, 'mongodb_operation'))
+        tab.close_connection()
+
+    def test_non_mongodb_has_no_operation_combobox(self):
+        """Non-MongoDB connections should not have an operation combobox"""
+        mock = MagicMock()
+        mock.params = {'name': 'test', 'type': 'postgresql'}
+        mock.connection_manager = MagicMock()
+        mock.connection_manager.system_databases_visibility_changed = MagicMock()
+        mock.connection_manager.system_databases_visibility_changed.disconnect = MagicMock(side_effect=Exception)
+        mock.connection_manager.system_databases_visibility_changed.connect = MagicMock()
+        mock.get_database_name.return_value = '(No database selected)'
+        mock.get_available_databases.return_value = []
+        tab = ConnectionTab(mock)
+        self.assertFalse(hasattr(tab, 'mongodb_operation'))
+        tab.close_connection()
+
+    def test_operation_combobox_has_all_operations(self):
+        """Operation combobox must contain all expected operations"""
+        from src.ui.connection_tab import _MONGODB_OPERATIONS
+        tab = ConnectionTab(self._make_mongodb_connection())
+        items = [tab.mongodb_operation.itemText(i) for i in range(tab.mongodb_operation.count())]
+        self.assertEqual(items, _MONGODB_OPERATIONS)
+        tab.close_connection()
+
+    def test_default_operation_is_find(self):
+        """Default operation should be 'find'"""
+        tab = ConnectionTab(self._make_mongodb_connection())
+        self.assertEqual(tab.mongodb_operation.currentText(), 'find')
+        tab.close_connection()
+
+    def test_default_template_loaded_on_init(self):
+        """On init, the find template should be loaded into the editor"""
+        import json
+        from src.ui.connection_tab import _MONGODB_TEMPLATES
+        tab = ConnectionTab(self._make_mongodb_connection())
+        editor_text = tab.query_editor.get_query()
+        parsed = json.loads(editor_text)
+        expected = _MONGODB_TEMPLATES['find']
+        self.assertEqual(parsed, expected)
+        tab.close_connection()
+
+    def test_changing_operation_loads_template(self):
+        """Changing the operation should load the corresponding template"""
+        import json
+        from src.ui.connection_tab import _MONGODB_TEMPLATES
+        tab = ConnectionTab(self._make_mongodb_connection())
+        tab.mongodb_operation.setCurrentText('aggregate')
+        editor_text = tab.query_editor.get_query()
+        parsed = json.loads(editor_text)
+        expected = _MONGODB_TEMPLATES['aggregate']
+        self.assertEqual(parsed, expected)
+        tab.close_connection()
+
+    def test_load_query_template_syncs_combobox(self):
+        """_load_query_template should sync the combobox to the operation in the JSON"""
+        import json
+        tab = ConnectionTab(self._make_mongodb_connection())
+        payload = json.dumps({"collection": "foo", "operation": "insert_one", "document": {}})
+        tab._load_query_template(payload)
+        self.assertEqual(tab.mongodb_operation.currentText(), 'insert_one')
+        tab.close_connection()
+
+    def test_load_query_template_find_syncs_combobox(self):
+        """JSON without explicit operation (defaulting to find) should set combobox to find"""
+        import json
+        tab = ConnectionTab(self._make_mongodb_connection())
+        tab.mongodb_operation.setCurrentText('aggregate')
+        payload = json.dumps({"collection": "foo", "filter": {}})
+        tab._load_query_template(payload)
+        self.assertEqual(tab.mongodb_operation.currentText(), 'find')
+        tab.close_connection()
+
+    def test_all_templates_are_valid_json(self):
+        """All operation templates must be valid JSON-serialisable dicts"""
+        import json
+        from src.ui.connection_tab import _MONGODB_TEMPLATES, _MONGODB_OPERATIONS
+        for op in _MONGODB_OPERATIONS:
+            self.assertIn(op, _MONGODB_TEMPLATES, f"Missing template for operation: {op}")
+            serialised = json.dumps(_MONGODB_TEMPLATES[op])
+            self.assertIsInstance(serialised, str)
+
+
 if __name__ == '__main__':
     unittest.main()
