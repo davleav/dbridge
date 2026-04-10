@@ -21,7 +21,7 @@ app = QApplication.instance()
 if app is None:
     app = QApplication([])
 
-from src.ui.results_view import ResultsView, ResultsTableModel
+from src.ui.results_view import ResultsView, ResultsTableModel, MongoDocumentTreeModel
 from src.ui.row_detail_dialog import RowDetailDialog
 
 
@@ -139,8 +139,9 @@ class TestResultsView(unittest.TestCase):
         self.assertIsNotNone(self.results_view.table_view)
         self.assertIsNotNone(self.results_view.table_model)
         self.assertIsNotNone(self.results_view.row_count_label)
+        self.assertIsNotNone(self.results_view.mongo_tree_view)
+        self.assertIsNotNone(self.results_view.mongo_tree_model)
         
-        # Check that the table view has a tooltip about double-clicking
         self.assertIn("Double-click", self.results_view.table_view.toolTip())
     
     def test_set_data(self):
@@ -353,13 +354,21 @@ class TestResultsViewMongoDB(unittest.TestCase):
         self.view.set_data(self.data)
         self.assertEqual(self.view.view_tabs.currentIndex(), 1)
 
-    def test_set_data_populates_json_view(self):
-        """set_data() should populate the JSON view with all documents for MongoDB"""
+    def test_set_data_populates_document_tree(self):
+        """set_data() should populate the document tree with all documents for MongoDB"""
         self.view.set_data(self.data)
-        json_text = self.view.json_view.toPlainText()
-        self.assertTrue(json_text.strip().startswith('['))
-        self.assertIn('Alice', json_text)
-        self.assertIn('Bob', json_text)
+        model = self.view.mongo_tree_model
+        self.assertEqual(model.rowCount(), 2)
+        doc1 = model.item(0, 0)
+        doc2 = model.item(1, 0)
+        self.assertIsNotNone(doc1)
+        self.assertIsNotNone(doc2)
+        self.assertIn('Document 1', doc1.text())
+        self.assertIn('Document 2', doc2.text())
+        field_texts = [doc1.child(r, 0).text() for r in range(doc1.rowCount())]
+        self.assertIn('name', field_texts)
+        name_row = field_texts.index('name')
+        self.assertEqual(doc1.child(name_row, 1).text(), 'Alice')
 
     def test_set_data_non_mongo_stays_on_table_tab(self):
         """set_data() should NOT switch tab for non-MongoDB connections"""
@@ -374,6 +383,143 @@ class TestResultsViewMongoDB(unittest.TestCase):
         self.view.view_tabs.setCurrentIndex(0)
         self.view.set_data(pd.DataFrame())
         self.assertEqual(self.view.view_tabs.currentIndex(), 0)
+
+
+class TestMongoDocumentTreeModel(unittest.TestCase):
+    """Tests for MongoDocumentTreeModel"""
+
+    def setUp(self):
+        self.data = pd.DataFrame({
+            '_id': ['id1', 'id2'],
+            'name': ['Alice', 'Bob'],
+            'score': [10, 20],
+        })
+
+    def test_populate_creates_document_items(self):
+        model = MongoDocumentTreeModel()
+        model.populate(self.data)
+        self.assertEqual(model.rowCount(), 2)
+        self.assertIn('Document 1', model.item(0, 0).text())
+        self.assertIn('id1', model.item(0, 0).text())
+        self.assertIn('Document 2', model.item(1, 0).text())
+
+    def test_populate_stores_row_index(self):
+        model = MongoDocumentTreeModel()
+        model.populate(self.data)
+        from PyQt6.QtCore import Qt
+        self.assertEqual(model.item(0, 0).data(Qt.ItemDataRole.UserRole), 0)
+        self.assertEqual(model.item(1, 0).data(Qt.ItemDataRole.UserRole), 1)
+
+    def test_populate_adds_fields_as_children(self):
+        model = MongoDocumentTreeModel()
+        model.populate(self.data)
+        doc_item = model.item(0, 0)
+        field_names = [doc_item.child(r, 0).text() for r in range(doc_item.rowCount())]
+        self.assertIn('_id', field_names)
+        self.assertIn('name', field_names)
+        self.assertIn('score', field_names)
+
+    def test_populate_nested_dict(self):
+        data = pd.DataFrame({'_id': ['a'], 'meta': [{'x': 1, 'y': 2}]})
+        model = MongoDocumentTreeModel()
+        model.populate(data)
+        doc_item = model.item(0, 0)
+        meta_row = next(r for r in range(doc_item.rowCount()) if doc_item.child(r, 0).text() == 'meta')
+        meta_item = doc_item.child(meta_row, 0)
+        self.assertEqual(doc_item.child(meta_row, 1).text(), '{...}')
+        child_keys = [meta_item.child(r, 0).text() for r in range(meta_item.rowCount())]
+        self.assertIn('x', child_keys)
+        self.assertIn('y', child_keys)
+
+    def test_populate_list_field(self):
+        data = pd.DataFrame({'_id': ['a'], 'tags': [['foo', 'bar']]})
+        model = MongoDocumentTreeModel()
+        model.populate(data)
+        doc_item = model.item(0, 0)
+        tags_row = next(r for r in range(doc_item.rowCount()) if doc_item.child(r, 0).text() == 'tags')
+        self.assertEqual(doc_item.child(tags_row, 1).text(), '[2 items]')
+
+    def test_populate_null_field(self):
+        data = pd.DataFrame({'_id': ['a'], 'field': [None]})
+        model = MongoDocumentTreeModel()
+        model.populate(data)
+        doc_item = model.item(0, 0)
+        field_row = next(r for r in range(doc_item.rowCount()) if doc_item.child(r, 0).text() == 'field')
+        self.assertEqual(doc_item.child(field_row, 1).text(), 'null')
+
+    def test_clear_resets_model(self):
+        model = MongoDocumentTreeModel()
+        model.populate(self.data)
+        model.clear()
+        model.setHorizontalHeaderLabels(["Field", "Value"])
+        self.assertEqual(model.rowCount(), 0)
+
+
+class TestResultsViewMongoTreeInteraction(unittest.TestCase):
+    """Tests for tree-based view details and selection in ResultsView"""
+
+    def setUp(self):
+        self.view = ResultsView()
+        self.mongo_connection = MagicMock()
+        self.mongo_connection.params = {'type': 'MongoDB'}
+        self.view.set_connection(self.mongo_connection)
+        self.data = pd.DataFrame({
+            '_id': ['abc', 'def'],
+            'name': ['Alice', 'Bob'],
+            'age': [30, 25],
+        })
+        self.view.set_data(self.data)
+
+    def test_tree_has_correct_document_count(self):
+        self.assertEqual(self.view.mongo_tree_model.rowCount(), 2)
+
+    @patch('src.ui.results_view.RowDetailDialog')
+    def test_double_click_on_doc_item_opens_details(self, mock_dialog):
+        mock_instance = MagicMock()
+        mock_dialog.return_value = mock_instance
+
+        doc_index = self.view.mongo_tree_model.index(0, 0)
+        self.view._tree_view_double_clicked(doc_index)
+
+        mock_dialog.assert_called_once()
+        args, _ = mock_dialog.call_args
+        self.assertEqual(args[1][1], 'name')
+        self.assertEqual(args[0][1], 'Alice')
+        mock_instance.exec.assert_called_once()
+
+    @patch('src.ui.results_view.RowDetailDialog')
+    def test_double_click_on_child_item_opens_details(self, mock_dialog):
+        mock_instance = MagicMock()
+        mock_dialog.return_value = mock_instance
+
+        doc_item = self.view.mongo_tree_model.item(1, 0)
+        child_index = doc_item.child(0, 0).index()
+        self.view._tree_view_double_clicked(child_index)
+
+        mock_dialog.assert_called_once()
+        args, _ = mock_dialog.call_args
+        self.assertEqual(args[0][1], 'Bob')
+
+    @patch('src.ui.results_view.RowDetailDialog')
+    def test_view_details_action_from_tree_tab(self, mock_dialog):
+        mock_instance = MagicMock()
+        mock_dialog.return_value = mock_instance
+
+        self.view.view_tabs.setCurrentIndex(1)
+
+        doc_index = self.view.mongo_tree_model.index(0, 0)
+        self.view.mongo_tree_view.setCurrentIndex(doc_index)
+
+        self.view._view_details_action()
+
+        mock_dialog.assert_called_once()
+        mock_instance.exec.assert_called_once()
+
+    def test_get_tree_selected_row_index_returns_correct_row(self):
+        doc_index = self.view.mongo_tree_model.index(1, 0)
+        self.view.mongo_tree_view.setCurrentIndex(doc_index)
+        row = self.view._get_tree_selected_row_index()
+        self.assertEqual(row, 1)
 
 
 if __name__ == '__main__':
