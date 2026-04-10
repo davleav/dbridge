@@ -1,13 +1,13 @@
-# DBridge (Beta 0.8.2)
+# DBridge (Beta 0.9.0)
 
-> **Note:** This is a beta version (0.8.2) of DBridge. Some features may be incomplete or subject to change.
+> **Note:** This is a beta version (0.9.0) of DBridge. Some features may be incomplete or subject to change.
 
-A user-friendly SQL client for Linux that runs as an AppImage.
+A user-friendly database client for Linux, Windows, and macOS.
 
 ## Features
 
 - Clean, intuitive user interface
-- Connect to MySQL, PostgreSQL, and SQLite databases
+- Connect to MongoDB, MySQL, PostgreSQL, and SQLite databases
 - Tabbed interface for working with multiple database connections simultaneously
 - SQL query editor with syntax highlighting
 - Advanced hierarchical database structure browser with ability to:
@@ -101,7 +101,7 @@ The installer will be created in the `installer` directory.
 ### Connecting to a Database
 
 1. Click on the "Connect" button in the toolbar or select "File > New Connection"
-2. Select your database type (MySQL, PostgreSQL, or SQLite)
+2. Select your database type (MongoDB, MySQL, PostgreSQL, or SQLite)
 3. Enter the connection details
 4. Click "Test Connection" to verify the connection works
 5. Click "OK" to connect
