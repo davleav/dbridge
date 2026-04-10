@@ -199,6 +199,7 @@ class ResultsView(QWidget):
             tree_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
 
         self.view_tabs.addTab(self.mongo_tree_view, "Document Tree")
+        self.view_tabs.setTabVisible(1, False)
 
         layout.addWidget(self.view_tabs)
     
@@ -302,6 +303,13 @@ class ResultsView(QWidget):
     def set_connection(self, connection):
         """Set the database connection for this results view"""
         self.connection = connection
+        is_mongodb = (
+            connection is not None
+            and hasattr(connection, 'params')
+            and connection.params.get('type') == 'MongoDB'
+        )
+        self.view_tabs.setTabVisible(0, not is_mongodb)
+        self.view_tabs.setTabVisible(1, is_mongodb)
     
     def _view_details_action(self):
         """Show details for the currently selected row (triggered from toolbar)"""
