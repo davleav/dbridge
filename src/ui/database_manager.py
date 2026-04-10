@@ -6,11 +6,13 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget, QPushButton,
     QListWidget, QLabel, QComboBox, QTableWidget, QTableWidgetItem,
     QCheckBox, QLineEdit, QMessageBox, QInputDialog, QDialogButtonBox,
-    QGroupBox, QFormLayout, QSplitter, QMenuBar, QMenu
+    QGroupBox, QFormLayout, QSplitter, QMenuBar, QMenu, QScrollArea,
+    QTextEdit, QFrame, QSizePolicy, QToolButton
 )
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QFont
 from PyQt6.QtCore import Qt, pyqtSignal
 import sys
+import json
 from typing import Dict, Any, Union, Optional, List, cast
 
 
@@ -82,6 +84,14 @@ class IndexesTab(QWidget):
     create_index_button: QPushButton
     drop_index_button: QPushButton
 
+class AddRecordTab(QWidget):
+    """Tab for adding new records to a table/collection"""
+    table_selector: QComboBox
+    fields_container: QWidget
+    add_field_button: QPushButton
+    submit_button: QPushButton
+    clear_button: QPushButton
+
 class DatabaseManagerDialog(QDialog):
     """Dialog for managing database structure"""
     
@@ -93,6 +103,7 @@ class DatabaseManagerDialog(QDialog):
     tables_tab: TablesTab
     columns_tab: ColumnsTab
     indexes_tab: IndexesTab
+    add_record_tab: AddRecordTab
     
     @classmethod
     def set_test_mode(cls, enabled=True):
@@ -129,6 +140,7 @@ class DatabaseManagerDialog(QDialog):
         self.tables_tab = self._create_tables_tab()
         self.columns_tab = self._create_columns_tab()
         self.indexes_tab = self._create_indexes_tab()
+        self.add_record_tab = self._create_add_record_tab()
         
         # Add tabs to the tab widget
         is_mongodb = self.connection.params.get('type') == 'MongoDB'
@@ -136,6 +148,7 @@ class DatabaseManagerDialog(QDialog):
         self.tabs.addTab(self.tables_tab, "Collections" if is_mongodb else "Tables")
         self.tabs.addTab(self.columns_tab, "Fields" if is_mongodb else "Columns")
         self.tabs.addTab(self.indexes_tab, "Indexes")
+        self.tabs.addTab(self.add_record_tab, "Add Record")
         
         layout.addWidget(self.tabs)
         
@@ -278,6 +291,69 @@ class DatabaseManagerDialog(QDialog):
         tab.drop_index_button = drop_index_button
         
         return tab
+
+    def _create_add_record_tab(self):
+        """Create the Add Record tab"""
+        tab = AddRecordTab()
+        layout = QVBoxLayout(tab)
+
+        is_mongodb = self.connection.params.get('type') == 'MongoDB'
+        entity_label = "Collection" if is_mongodb else "Table"
+
+        # Table/collection selector row
+        selector_layout = QHBoxLayout()
+        selector_layout.addWidget(QLabel(f"{entity_label}:"))
+        table_selector = QComboBox()
+        selector_layout.addWidget(table_selector)
+        selector_layout.addStretch()
+        layout.addLayout(selector_layout)
+
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        layout.addWidget(sep)
+
+        # Scroll area to hold the fields
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+
+        fields_container = QWidget()
+        fields_layout = QVBoxLayout(fields_container)
+        fields_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        fields_container.setLayout(fields_layout)
+
+        scroll_area.setWidget(fields_container)
+        layout.addWidget(scroll_area, stretch=1)
+
+        # For MongoDB: "Add Field" button
+        if is_mongodb:
+            add_field_button = QPushButton("+ Add Field")
+            add_field_button.setToolTip("Add a new field to the document")
+            layout.addWidget(add_field_button)
+        else:
+            add_field_button = QPushButton()
+            add_field_button.setVisible(False)
+
+        # Bottom button row
+        bottom_layout = QHBoxLayout()
+        clear_button = QPushButton("Clear")
+        submit_button = QPushButton("Insert Record")
+        submit_button.setDefault(True)
+        bottom_layout.addWidget(clear_button)
+        bottom_layout.addStretch()
+        bottom_layout.addWidget(submit_button)
+        layout.addLayout(bottom_layout)
+
+        # Store references
+        tab.table_selector = table_selector
+        tab.fields_container = fields_container
+        tab.add_field_button = add_field_button
+        tab.submit_button = submit_button
+        tab.clear_button = clear_button
+
+        return tab
     
     def _populate_data(self):
         """Populate the UI with data from the database"""
@@ -317,8 +393,14 @@ class DatabaseManagerDialog(QDialog):
                     self._populate_columns(selected_table)
                     self._populate_indexes(selected_table)
             
+            # Populate the Add Record tab table selector
+            self._populate_add_record_table_selector()
+
             # Switch to the Tables tab
             self.tabs.setCurrentIndex(1)  # Index 1 is the tables tab
+        else:
+            # Still populate the Add Record tab table selector (may be empty)
+            self._populate_add_record_table_selector()
     
     def _populate_databases(self):
         """Populate the databases list"""
@@ -672,7 +754,14 @@ class DatabaseManagerDialog(QDialog):
         self.indexes_tab.table_selector.currentTextChanged.connect(self._populate_indexes)
         self.indexes_tab.create_index_button.clicked.connect(self._create_index)
         self.indexes_tab.drop_index_button.clicked.connect(self._drop_index)
-        
+
+        # Add Record tab
+        self.add_record_tab.table_selector.currentTextChanged.connect(self._on_add_record_table_changed)
+        self.add_record_tab.submit_button.clicked.connect(self._submit_new_record)
+        self.add_record_tab.clear_button.clicked.connect(self._clear_add_record_form)
+        is_mongodb = self.connection.params.get('type') == 'MongoDB'
+        if is_mongodb:
+            self.add_record_tab.add_field_button.clicked.connect(self._add_mongo_field_row)
 
     
     def _create_database(self):
@@ -1661,6 +1750,241 @@ class DatabaseManagerDialog(QDialog):
                 QMessageBox.information(self, "Success", f"Index '{index_name}' dropped successfully.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to drop index: {str(e)}")
+
+    def _populate_add_record_table_selector(self):
+        """Populate the table/collection selector in the Add Record tab"""
+        self.add_record_tab.table_selector.blockSignals(True)
+        self.add_record_tab.table_selector.clear()
+        try:
+            tables = self.connection.get_tables()
+            self.add_record_tab.table_selector.addItems(tables)
+        except Exception as e:
+            if not self._test_mode:
+                QMessageBox.warning(self, "Error", f"Failed to retrieve tables: {str(e)}")
+        finally:
+            self.add_record_tab.table_selector.blockSignals(False)
+
+        current_table = self.add_record_tab.table_selector.currentText()
+        if current_table:
+            self._on_add_record_table_changed(current_table)
+
+    def _on_add_record_table_changed(self, table_name: str):
+        """Rebuild the fields form when the selected table/collection changes"""
+        is_mongodb = self.connection.params.get('type') == 'MongoDB'
+        fields_container = self.add_record_tab.fields_container
+        layout = fields_container.layout()
+
+        # Clear all existing widgets from the layout
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not table_name:
+            return
+
+        if is_mongodb:
+            # For MongoDB: show a simple starter field row; user can add more
+            self._add_mongo_field_row()
+        else:
+            # For SQL: build a form based on the table's columns
+            try:
+                columns = self.connection.get_columns(table_name)
+            except Exception as e:
+                if not self._test_mode:
+                    QMessageBox.warning(self, "Error", f"Failed to retrieve columns: {str(e)}")
+                return
+
+            for col in columns:
+                col_name = col['name']
+                col_type = col.get('type', '')
+                row_widget = QWidget()
+                row_layout = QHBoxLayout(row_widget)
+                row_layout.setContentsMargins(0, 2, 0, 2)
+
+                label = QLabel(f"{col_name}")
+                label.setMinimumWidth(150)
+                label.setMaximumWidth(200)
+                bold_font = QFont()
+                bold_font.setBold(True)
+                label.setFont(bold_font)
+                type_label = QLabel(f"({col_type})")
+                type_label.setMinimumWidth(100)
+                type_label.setMaximumWidth(140)
+
+                value_edit = QTextEdit()
+                value_edit.setPlaceholderText("NULL")
+                value_edit.setFixedHeight(60)
+                value_edit.setProperty("field_name", col_name)
+
+                row_layout.addWidget(label)
+                row_layout.addWidget(type_label)
+                row_layout.addWidget(value_edit, stretch=1)
+                layout.addWidget(row_widget)
+
+    def _add_mongo_field_row(self, field_name: str = "", field_value: str = ""):
+        """Add a new field row (name + value editor) to the MongoDB Add Record form"""
+        fields_container = self.add_record_tab.fields_container
+        layout = fields_container.layout()
+
+        row_widget = QWidget()
+        row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 2, 0, 2)
+
+        name_edit = QLineEdit()
+        name_edit.setPlaceholderText("Field name")
+        name_edit.setFixedWidth(160)
+        name_edit.setText(field_name)
+        name_edit.setProperty("role", "field_name")
+
+        value_edit = QTextEdit()
+        value_edit.setPlaceholderText('Value (plain text or JSON, e.g. {"key": "value"})')
+        value_edit.setFixedHeight(60)
+        value_edit.setText(field_value)
+        value_edit.setProperty("role", "field_value")
+
+        remove_button = QToolButton()
+        remove_button.setText("✕")
+        remove_button.setToolTip("Remove this field")
+        remove_button.setFixedWidth(28)
+        remove_button.clicked.connect(lambda: self._remove_mongo_field_row(row_widget))
+
+        row_layout.addWidget(name_edit)
+        row_layout.addWidget(value_edit, stretch=1)
+        row_layout.addWidget(remove_button)
+        layout.addWidget(row_widget)
+
+    def _remove_mongo_field_row(self, row_widget: QWidget):
+        """Remove a MongoDB field row from the form"""
+        layout = self.add_record_tab.fields_container.layout()
+        layout.removeWidget(row_widget)
+        row_widget.deleteLater()
+
+    def _clear_add_record_form(self):
+        """Clear all inputs in the Add Record tab"""
+        table_name = self.add_record_tab.table_selector.currentText()
+        self._on_add_record_table_changed(table_name)
+
+    def _submit_new_record(self):
+        """Collect form data and insert a new record into the selected table/collection"""
+        table_name = self.add_record_tab.table_selector.currentText()
+        if not table_name:
+            if not self._test_mode:
+                QMessageBox.warning(self, "Warning", "Please select a table/collection first.")
+            return
+
+        is_mongodb = self.connection.params.get('type') == 'MongoDB'
+
+        try:
+            if is_mongodb:
+                self._submit_mongo_record(table_name)
+            else:
+                self._submit_sql_record(table_name)
+        except Exception as e:
+            if not self._test_mode:
+                QMessageBox.critical(self, "Error", f"Failed to insert record: {str(e)}")
+
+    def _submit_mongo_record(self, collection_name: str):
+        """Build and execute a MongoDB insert_one from the dynamic field rows"""
+        fields_container = self.add_record_tab.fields_container
+        layout = fields_container.layout()
+        document: Dict[str, Any] = {}
+
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if not item:
+                continue
+            row_widget = item.widget()
+            if not row_widget:
+                continue
+            name_edit = None
+            value_edit = None
+            for child in row_widget.findChildren(QLineEdit):
+                if child.property("role") == "field_name":
+                    name_edit = child
+                    break
+            for child in row_widget.findChildren(QTextEdit):
+                if child.property("role") == "field_value":
+                    value_edit = child
+                    break
+
+            if name_edit is None or value_edit is None:
+                continue
+
+            field_name = name_edit.text().strip()
+            if not field_name:
+                continue
+
+            raw_value = value_edit.toPlainText().strip()
+            # Try to parse as JSON for complex types; fall back to plain string
+            try:
+                parsed_value = json.loads(raw_value)
+            except (json.JSONDecodeError, ValueError):
+                parsed_value = raw_value
+
+            document[field_name] = parsed_value
+
+        if not document:
+            if not self._test_mode:
+                QMessageBox.warning(self, "Warning", "Please fill in at least one field.")
+            return
+
+        query = json.dumps({
+            "operation": "insert_one",
+            "collection": collection_name,
+            "document": document
+        })
+        self.connection.execute_non_query(query)
+        if not self._test_mode:
+            QMessageBox.information(self, "Success", "Record inserted successfully.")
+        self._clear_add_record_form()
+
+    def _submit_sql_record(self, table_name: str):
+        """Build and execute a SQL INSERT from the form fields"""
+        fields_container = self.add_record_tab.fields_container
+        layout = fields_container.layout()
+        columns: List[str] = []
+        values: List[str] = []
+
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if not item:
+                continue
+            row_widget = item.widget()
+            if not row_widget:
+                continue
+            value_edit = None
+            for child in row_widget.findChildren(QTextEdit):
+                value_edit = child
+                break
+
+            if value_edit is None:
+                continue
+
+            field_name = value_edit.property("field_name")
+            raw_value = value_edit.toPlainText().strip()
+
+            if raw_value == "" or raw_value.upper() == "NULL":
+                # Skip NULL values — let the DB use defaults
+                continue
+
+            columns.append(field_name)
+            # Escape single quotes
+            escaped = raw_value.replace("'", "''")
+            values.append(f"'{escaped}'")
+
+        if not columns:
+            if not self._test_mode:
+                QMessageBox.warning(self, "Warning", "Please fill in at least one field.")
+            return
+
+        col_list = ", ".join(columns)
+        val_list = ", ".join(values)
+        sql = f"INSERT INTO {table_name} ({col_list}) VALUES ({val_list});"
+        self.connection.execute_non_query(sql)
+        if not self._test_mode:
+            QMessageBox.information(self, "Success", "Record inserted successfully.")
+        self._clear_add_record_form()
 
 
 class CreateTableDialog(QDialog):

@@ -4,6 +4,7 @@ Tests for the database manager interface
 
 import unittest
 import os
+import json
 from unittest.mock import patch, MagicMock
 from typing import Dict, List, Any
 
@@ -615,6 +616,183 @@ class TestCreateIndexDialog(unittest.TestCase):
         self.assertEqual(definition['table'], "table1")
         self.assertEqual(definition['columns'], ["id"])
         self.assertTrue(definition['unique'])
+
+
+class TestAddRecordTab(unittest.TestCase):
+    """Test cases for the Add Record tab in DatabaseManagerDialog"""
+
+    mock_connection: MagicMock
+    dialog: DatabaseManagerDialog
+
+    @classmethod
+    def setUpClass(cls):
+        set_global_test_mode(True)
+
+    def setUp(self):
+        self.mock_connection = MagicMock()
+        self.mock_connection.params = {'type': 'MySQL'}
+        self.mock_connection.get_database_name.return_value = "test_db"
+        self.mock_connection.get_tables.return_value = ["users", "orders"]
+        self.mock_connection.get_columns.return_value = [
+            {"name": "id", "type": "INTEGER"},
+            {"name": "name", "type": "TEXT"},
+            {"name": "email", "type": "VARCHAR(255)"},
+        ]
+        self.mock_connection.get_indexes.return_value = []
+        self.mock_connection.can_drop_database.return_value = True
+        self.mock_connection.can_create_database.return_value = True
+        self.mock_connection.is_system_database.return_value = False
+        self.mock_connection.is_admin.return_value = True
+        self.mock_connection.connection_manager = MagicMock()
+        self.mock_connection.connection_manager.get_show_system_databases.return_value = True
+        self.mock_connection.get_available_databases.return_value = ["test_db"]
+        self.dialog = DatabaseManagerDialog(self.mock_connection)
+
+    def test_add_record_tab_exists(self):
+        self.assertTrue(hasattr(self.dialog, 'add_record_tab'))
+
+    def test_add_record_tab_components(self):
+        tab = self.dialog.add_record_tab
+        self.assertTrue(hasattr(tab, 'table_selector'))
+        self.assertTrue(hasattr(tab, 'fields_container'))
+        self.assertTrue(hasattr(tab, 'submit_button'))
+        self.assertTrue(hasattr(tab, 'clear_button'))
+        self.assertTrue(hasattr(tab, 'add_field_button'))
+
+    def test_add_record_tab_in_tabs(self):
+        tab_count = self.dialog.tabs.count()
+        tab_texts = [self.dialog.tabs.tabText(i) for i in range(tab_count)]
+        self.assertIn("Add Record", tab_texts)
+
+    def test_sql_form_populated_on_table_select(self):
+        self.dialog._on_add_record_table_changed("users")
+        layout = self.dialog.add_record_tab.fields_container.layout()
+        self.assertGreater(layout.count(), 0)
+
+    def test_sql_form_clears_on_clear(self):
+        self.dialog._on_add_record_table_changed("users")
+        self.dialog._clear_add_record_form()
+        layout = self.dialog.add_record_tab.fields_container.layout()
+        self.assertGreaterEqual(layout.count(), 0)
+
+    def test_submit_sql_record_calls_execute_non_query(self):
+        self.dialog.add_record_tab.table_selector.addItem("users")
+        self.dialog.add_record_tab.table_selector.setCurrentText("users")
+        self.dialog._on_add_record_table_changed("users")
+
+        layout = self.dialog.add_record_tab.fields_container.layout()
+        from PyQt6.QtWidgets import QTextEdit as _QTE
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if not item:
+                continue
+            row_widget = item.widget()
+            if not row_widget:
+                continue
+            for child in row_widget.findChildren(_QTE):
+                if child.property("field_name") == "name":
+                    child.setPlainText("Alice")
+
+        with patch.object(self.mock_connection, 'execute_non_query') as mock_exec:
+            self.dialog._submit_sql_record("users")
+            mock_exec.assert_called_once()
+            call_arg = mock_exec.call_args[0][0]
+            self.assertIn("INSERT INTO users", call_arg)
+            self.assertIn("name", call_arg)
+            self.assertIn("Alice", call_arg)
+
+    def test_submit_sql_record_empty_form_no_call(self):
+        self.dialog.add_record_tab.table_selector.addItem("users")
+        self.dialog.add_record_tab.table_selector.setCurrentText("users")
+        self.dialog._on_add_record_table_changed("users")
+
+        with patch.object(self.mock_connection, 'execute_non_query') as mock_exec:
+            self.dialog._submit_sql_record("users")
+            mock_exec.assert_not_called()
+
+
+class TestAddRecordTabMongoDB(unittest.TestCase):
+    """Test cases for the Add Record tab with a MongoDB connection"""
+
+    mock_connection: MagicMock
+    dialog: DatabaseManagerDialog
+
+    @classmethod
+    def setUpClass(cls):
+        set_global_test_mode(True)
+
+    def setUp(self):
+        self.mock_connection = MagicMock()
+        self.mock_connection.params = {'type': 'MongoDB'}
+        self.mock_connection.get_database_name.return_value = "mydb"
+        self.mock_connection.get_tables.return_value = ["users"]
+        self.mock_connection.get_columns.return_value = [
+            {"name": "_id", "type": "ObjectId"},
+            {"name": "name", "type": "str"},
+        ]
+        self.mock_connection.get_indexes.return_value = []
+        self.mock_connection.can_drop_database.return_value = True
+        self.mock_connection.can_create_database.return_value = True
+        self.mock_connection.is_system_database.return_value = False
+        self.mock_connection.is_admin.return_value = True
+        self.mock_connection.connection_manager = MagicMock()
+        self.mock_connection.connection_manager.get_show_system_databases.return_value = True
+        self.mock_connection.get_available_databases.return_value = ["mydb"]
+        self.dialog = DatabaseManagerDialog(self.mock_connection)
+
+    def test_add_field_button_visible_for_mongodb(self):
+        self.assertTrue(self.dialog.add_record_tab.add_field_button.isVisible())
+
+    def test_add_mongo_field_row_adds_row(self):
+        self.dialog._on_add_record_table_changed("users")
+        layout_before = self.dialog.add_record_tab.fields_container.layout().count()
+        self.dialog._add_mongo_field_row()
+        layout_after = self.dialog.add_record_tab.fields_container.layout().count()
+        self.assertEqual(layout_after, layout_before + 1)
+
+    def test_submit_mongo_record_calls_execute_non_query(self):
+        self.dialog.add_record_tab.table_selector.addItem("users")
+        self.dialog.add_record_tab.table_selector.setCurrentText("users")
+        self.dialog._on_add_record_table_changed("users")
+
+        self.dialog._add_mongo_field_row("username", "Bob")
+
+        with patch.object(self.mock_connection, 'execute_non_query') as mock_exec:
+            self.dialog._submit_mongo_record("users")
+            mock_exec.assert_called_once()
+            call_arg = mock_exec.call_args[0][0]
+            parsed = json.loads(call_arg)
+            self.assertEqual(parsed["operation"], "insert_one")
+            self.assertEqual(parsed["collection"], "users")
+            self.assertIn("username", parsed["document"])
+            self.assertEqual(parsed["document"]["username"], "Bob")
+
+    def test_submit_mongo_record_json_value_parsed(self):
+        self.dialog.add_record_tab.table_selector.addItem("users")
+        self.dialog.add_record_tab.table_selector.setCurrentText("users")
+        self.dialog._on_add_record_table_changed("users")
+
+        self.dialog._add_mongo_field_row("address", '{"city": "NY", "zip": "10001"}')
+
+        with patch.object(self.mock_connection, 'execute_non_query') as mock_exec:
+            self.dialog._submit_mongo_record("users")
+            mock_exec.assert_called_once()
+            call_arg = mock_exec.call_args[0][0]
+            parsed = json.loads(call_arg)
+            self.assertEqual(parsed["document"]["address"], {"city": "NY", "zip": "10001"})
+
+    def test_remove_mongo_field_row(self):
+        self.dialog._on_add_record_table_changed("users")
+        layout = self.dialog.add_record_tab.fields_container.layout()
+        count_before = layout.count()
+        self.dialog._add_mongo_field_row("temp", "value")
+        self.assertEqual(layout.count(), count_before + 1)
+
+        row_widget = layout.itemAt(layout.count() - 1).widget()
+        self.dialog._remove_mongo_field_row(row_widget)
+        from PyQt6.QtWidgets import QApplication as _QApp
+        _QApp.processEvents()
+        self.assertEqual(layout.count(), count_before)
 
 
 if __name__ == '__main__':
