@@ -4,11 +4,11 @@ Results view for displaying query results
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTableView, QHeaderView,
-    QToolBar, QLabel, QComboBox, QPushButton, QFileDialog,
-    QHBoxLayout, QTabWidget, QPlainTextEdit
+    QToolBar, QLabel, QPushButton, QFileDialog,
+    QHBoxLayout, QTabWidget, QTreeView, QMenu
 )
 from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex
-from PyQt6.QtGui import QAction, QFont
+from PyQt6.QtGui import QAction, QFont, QStandardItemModel, QStandardItem
 
 import csv
 import json
@@ -68,13 +68,76 @@ class ResultsTableModel(QAbstractTableModel):
         self.endResetModel()
 
 
+class MongoDocumentTreeModel(QStandardItemModel):
+    """Tree model for displaying MongoDB documents in a hierarchical view"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setHorizontalHeaderLabels(["Field", "Value"])
+
+    def populate(self, data):
+        """Populate the tree with MongoDB documents from a DataFrame"""
+        self.clear()
+        self.setHorizontalHeaderLabels(["Field", "Value"])
+
+        for i in range(len(data)):
+            _id_str = ""
+            if '_id' in data.columns:
+                _id_val = data.iloc[i]['_id']
+                try:
+                    if not pd.isna(_id_val):
+                        _id_str = f" ({_id_val})"
+                except (TypeError, ValueError):
+                    _id_str = f" ({_id_val})"
+
+            doc_item = QStandardItem(f"Document {i + 1}{_id_str}")
+            doc_item.setData(i, Qt.ItemDataRole.UserRole)
+            doc_item.setEditable(False)
+            val_placeholder = QStandardItem("")
+            val_placeholder.setEditable(False)
+
+            for col in data.columns:
+                value = data.iloc[i][col]
+                try:
+                    if pd.isna(value):
+                        value = None
+                except (TypeError, ValueError):
+                    pass
+                self._add_field(doc_item, str(col), value)
+
+            self.appendRow([doc_item, val_placeholder])
+
+    def _add_field(self, parent_item, key, value):
+        """Recursively add a field to a parent item"""
+        key_item = QStandardItem(str(key))
+        key_item.setEditable(False)
+
+        if isinstance(value, dict):
+            val_item = QStandardItem("{...}")
+            val_item.setEditable(False)
+            for k, v in value.items():
+                self._add_field(key_item, str(k), v)
+        elif isinstance(value, list):
+            val_item = QStandardItem(f"[{len(value)} items]")
+            val_item.setEditable(False)
+            for idx, v in enumerate(value):
+                self._add_field(key_item, str(idx), v)
+        elif value is None:
+            val_item = QStandardItem("null")
+            val_item.setEditable(False)
+        else:
+            val_item = QStandardItem(str(value))
+            val_item.setEditable(False)
+
+        parent_item.appendRow([key_item, val_item])
+
+
 class ResultsView(QWidget):
     """Widget for displaying query results in a table"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        # Initialize connection attribute
         self.connection = None
         
         self._create_ui()
@@ -84,36 +147,29 @@ class ResultsView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # Toolbar for results actions
         toolbar = QToolBar()
         
-        # View details action
         view_details_action = QAction("View Details", self)
         view_details_action.setToolTip("View detailed information for the selected row")
         view_details_action.triggered.connect(self._view_details_action)
         toolbar.addAction(view_details_action)
         
-        # Export action
         export_action = QAction("Export", self)
         export_action.setToolTip("Export results to CSV or Excel")
         export_action.triggered.connect(self._export_data)
         toolbar.addAction(export_action)
         
-        # Row count label
         toolbar.addSeparator()
         self.row_count_label = QLabel("0 rows")
         toolbar.addWidget(self.row_count_label)
         
         layout.addWidget(toolbar)
         
-        # Tab widget to hold table view + JSON view
         self.view_tabs = QTabWidget()
 
-        # Results table
         self.table_view = QTableView()
         self.table_view.setAlternatingRowColors(True)
         
-        # Configure horizontal header with null check
         header = self.table_view.horizontalHeader()
         if header is not None:
             header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -121,22 +177,28 @@ class ResultsView(QWidget):
             
         self.table_view.setToolTip("Double-click on a row to view detailed information")
         
-        # Connect double-click signal to show row details
         self.table_view.doubleClicked.connect(self._show_row_details)
-        # Connect selection change to update JSON view
-        self.table_view.clicked.connect(self._update_json_view)
+        self.table_view.clicked.connect(self._on_table_row_clicked)
         
         self.table_model = ResultsTableModel()
         self.table_view.setModel(self.table_model)
 
         self.view_tabs.addTab(self.table_view, "Table")
 
-        # JSON view for inspecting individual documents
-        self.json_view = QPlainTextEdit()
-        self.json_view.setReadOnly(True)
-        mono_font = QFont("Courier New", 10)
-        self.json_view.setFont(mono_font)
-        self.view_tabs.addTab(self.json_view, "JSON View")
+        self.mongo_tree_model = MongoDocumentTreeModel()
+        self.mongo_tree_view = QTreeView()
+        self.mongo_tree_view.setModel(self.mongo_tree_model)
+        self.mongo_tree_view.setAlternatingRowColors(True)
+        self.mongo_tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.mongo_tree_view.customContextMenuRequested.connect(self._show_tree_context_menu)
+        self.mongo_tree_view.doubleClicked.connect(self._tree_view_double_clicked)
+
+        tree_header = self.mongo_tree_view.header()
+        if tree_header is not None:
+            tree_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+            tree_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+
+        self.view_tabs.addTab(self.mongo_tree_view, "Document Tree")
 
         layout.addWidget(self.view_tabs)
     
@@ -144,10 +206,6 @@ class ResultsView(QWidget):
         """Set the results data"""
         self.table_model.set_data(data)
         self.row_count_label.setText(f"{len(data)} rows")
-        self.json_view.clear()
-        
-        # Auto-resize columns to content
-        self.table_view.resizeColumnsToContents()
 
         is_mongodb = (
             self.connection is not None
@@ -156,169 +214,164 @@ class ResultsView(QWidget):
         )
 
         if is_mongodb and len(data) > 0:
-            records = []
-            for i in range(len(data)):
-                row_dict = {}
-                for col in range(len(data.columns)):
-                    col_name = str(data.columns[col])
-                    value = data.iloc[i, col]
-                    try:
-                        if pd.isna(value):
-                            row_dict[col_name] = None
-                            continue
-                    except (TypeError, ValueError):
-                        pass
-                    row_dict[col_name] = value
-                records.append(row_dict)
-            try:
-                formatted = json.dumps(records, indent=2, default=str)
-            except Exception:
-                formatted = str(records)
-            self.json_view.setPlainText(formatted)
+            self.mongo_tree_model.populate(data)
+            self.mongo_tree_view.expandToDepth(0)
             self.view_tabs.setCurrentIndex(1)
+        else:
+            self.mongo_tree_model.clear()
+            self.mongo_tree_model.setHorizontalHeaderLabels(["Field", "Value"])
 
-    def _update_json_view(self, index):
-        """Update the JSON view to show the selected row as formatted JSON"""
+        self.table_view.resizeColumnsToContents()
+
+    def _on_table_row_clicked(self, index):
+        """Sync tree view selection when a row is clicked in the table view"""
         if not index.isValid() or self.table_model.rowCount() == 0:
             return
 
+        is_mongodb = (
+            self.connection is not None
+            and hasattr(self.connection, 'params')
+            and self.connection.params.get('type') == 'MongoDB'
+        )
+
+        if not is_mongodb:
+            return
+
         row_index = index.row()
-        row_dict = {}
-        for col in range(self.table_model.columnCount()):
-            col_name = str(self.table_model._data.columns[col])
-            value = self.table_model._data.iloc[row_index, col]
-            try:
-                if pd.isna(value):
-                    row_dict[col_name] = None
-                    continue
-            except (TypeError, ValueError):
-                pass
-            row_dict[col_name] = value if not isinstance(value, float) else value
+        tree_index = self.mongo_tree_model.index(row_index, 0)
+        if tree_index.isValid():
+            self.mongo_tree_view.setCurrentIndex(tree_index)
+            self.mongo_tree_view.scrollTo(tree_index)
 
-        try:
-            formatted = json.dumps(row_dict, indent=2, default=str)
-        except Exception:
-            formatted = str(row_dict)
+    def _get_tree_selected_row_index(self):
+        """Return the DataFrame row index for the currently selected tree item, or None"""
+        sel_model = self.mongo_tree_view.selectionModel()
+        if sel_model is None:
+            return None
 
-        self.json_view.setPlainText(formatted)
+        indexes = sel_model.selectedIndexes()
+        if not indexes:
+            current = self.mongo_tree_view.currentIndex()
+            if not current.isValid():
+                return None
+            indexes = [current]
+
+        index = indexes[0]
+        item = self.mongo_tree_model.itemFromIndex(index)
+        if item is None:
+            return None
+
+        while item.parent() is not None:
+            item = item.parent()
+
+        row_data = item.data(Qt.ItemDataRole.UserRole)
+        if row_data is None:
+            return None
+        return int(row_data)
+
+    def _tree_view_double_clicked(self, index):
+        """Open view details dialog when a tree item is double-clicked"""
+        if not index.isValid():
+            return
+
+        item = self.mongo_tree_model.itemFromIndex(index)
+        if item is None:
+            return
+
+        while item.parent() is not None:
+            item = item.parent()
+
+        row_index = item.data(Qt.ItemDataRole.UserRole)
+        if row_index is None:
+            return
+
+        self._show_row_details_for_index(int(row_index))
+
+    def _show_tree_context_menu(self, position):
+        """Show a context menu for tree view items"""
+        index = self.mongo_tree_view.indexAt(position)
+        if not index.isValid():
+            return
+
+        menu = QMenu(self)
+        view_details_action = menu.addAction("View Details")
+        action = menu.exec(self.mongo_tree_view.viewport().mapToGlobal(position))
+        if action == view_details_action:
+            self._tree_view_double_clicked(index)
         
     def set_connection(self, connection):
-        """Set the database connection for this results view
-        
-        Args:
-            connection: The database connection object
-        """
+        """Set the database connection for this results view"""
         self.connection = connection
     
     def _view_details_action(self):
         """Show details for the currently selected row (triggered from toolbar)"""
-        # Get the selected row
+        current_tab = self.view_tabs.currentIndex()
+
+        if current_tab == 1:
+            row_index = self._get_tree_selected_row_index()
+            if row_index is not None:
+                self._show_row_details_for_index(row_index)
+            return
+
         selection_model = self.table_view.selectionModel()
         if selection_model is None:
             return
             
         selected_indexes = selection_model.selectedRows()
         if not selected_indexes:
-            # If no row is selected, try to get the current index
             current_index = self.table_view.currentIndex()
             if current_index.isValid():
                 self._show_row_details(current_index)
             return
             
-        # Use the first selected row
         if selected_indexes:
             self._show_row_details(selected_indexes[0])
+
+    def _show_row_details_for_index(self, row_index):
+        """Show detailed view for a given DataFrame row index"""
+        if row_index < 0 or row_index >= self.table_model.rowCount():
+            return
+
+        row_data = []
+        column_names = []
+
+        for col in range(self.table_model.columnCount()):
+            column_names.append(str(self.table_model._data.columns[col]))
+            value = self.table_model._data.iloc[row_index, col]
+            row_data.append(value)
+
+        dialog = RowDetailDialog(row_data, column_names, self)
+        dialog.data_updated.connect(lambda columns, data: self._update_row_data(row_index, columns, data))
+        dialog.exec()
     
     def _show_row_details(self, index):
         """Show detailed view of a row when double-clicked"""
         if not index.isValid() or self.table_model.rowCount() == 0:
             return
             
-        # Get the row data
-        row_index = index.row()
-        row_data = []
-        column_names = []
-        
-        # Extract column names and row values
-        for col in range(self.table_model.columnCount()):
-            column_names.append(str(self.table_model._data.columns[col]))
-            value = self.table_model._data.iloc[row_index, col]
-            row_data.append(value)
-        
-        # Create and show the detail dialog
-        dialog = RowDetailDialog(row_data, column_names, self)
-        
-        # Connect the data_updated signal to handle updates
-        dialog.data_updated.connect(lambda columns, data: self._update_row_data(row_index, columns, data))
-        
-        dialog.exec()
+        self._show_row_details_for_index(index.row())
     
     def _update_row_data(self, row_index, columns, data):
-        """
-        Update the row data in the table model
-        
-        Args:
-            row_index: Index of the row to update
-            columns: List of column names
-            data: List of updated values
-        """
+        """Update the row data in the table model"""
         if row_index < 0 or row_index >= self.table_model.rowCount():
             return
             
-        # Update the data in the pandas DataFrame
         for col_idx, (col_name, value) in enumerate(zip(columns, data)):
-            # Find the column index in the DataFrame
             if col_name in self.table_model._data.columns:
                 self.table_model._data.iloc[row_index, col_idx] = value
         
-        # Notify the model that data has changed
         top_left = self.table_model.index(row_index, 0)
         bottom_right = self.table_model.index(row_index, self.table_model.columnCount() - 1)
         self.table_model.dataChanged.emit(top_left, bottom_right)
         
-        # If we have a connection, update the database
         if hasattr(self, 'connection') and self.connection is not None:
             self._update_database_row(row_index, columns, data)
     
     def _update_database_row(self, row_index, columns, data):
-        """
-        Update the row in the database
-        
-        Args:
-            row_index: Index of the row to update
-            columns: List of column names
-            data: List of updated values
-        """
-        # This method would need to be implemented based on your database structure
-        # and how you're executing queries. For now, we'll just log a message.
+        """Update the row in the database"""
         print(f"Database update would happen here for row {row_index}")
         print(f"Columns: {columns}")
         print(f"Data: {data}")
-        
-        # In a real implementation, you would:
-        # 1. Get the table name and primary key
-        # 2. Build an UPDATE SQL statement
-        # 3. Execute the statement with the connection
-        
-        # Example (pseudocode):
-        # table_name = self.current_table
-        # primary_key_col = self.get_primary_key_column(table_name)
-        # primary_key_val = self.get_primary_key_value(row_index)
-        # 
-        # update_cols = []
-        # update_vals = []
-        # for col, val in zip(columns, data):
-        #     if col != primary_key_col:  # Don't update the primary key
-        #         update_cols.append(col)
-        #         update_vals.append(val)
-        # 
-        # sql = f"UPDATE {table_name} SET "
-        # sql += ", ".join([f"{col} = ?" for col in update_cols])
-        # sql += f" WHERE {primary_key_col} = ?"
-        # 
-        # params = update_vals + [primary_key_val]
-        # self.connection.execute(sql, params)
-        # self.connection.commit()
     
     def _export_data(self):
         """Export the results data to a file"""
@@ -343,7 +396,6 @@ class ResultsView(QWidget):
             elif file_path.endswith('.xlsx'):
                 data.to_excel(file_path, index=False)
             else:
-                # Default to CSV if no extension is specified
                 if '.' not in file_path:
                     file_path += '.csv'
                 data.to_csv(file_path, index=False)
