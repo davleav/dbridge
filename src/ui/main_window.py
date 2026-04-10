@@ -808,9 +808,10 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "About DBridge",
-            "DBridge - A user-friendly SQL client for Linux\n\n"
+            "DBridge - A user-friendly database client for Linux, Windows, and macOS\n\n"
             f"Beta Version {__version__}\n\n"
-            "A simple, intuitive SQL client for database management.\n"
+            "A simple, intuitive client for database management.\n"
+            "Supports MongoDB, MySQL, PostgreSQL, and SQLite databases.\n"
             "Features tabbed interface for multiple connections and\n"
             "customizable interface with show/hide options for toolbar and database browser.\n\n"
             "Developed by: David Leavitt\n"
