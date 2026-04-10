@@ -398,7 +398,9 @@ class DatabaseBrowser(QWidget):
             export_db_action.triggered.connect(self._export_database)
             menu.addAction(export_db_action)
             
-            import_sql_action = QAction("Import SQL File...", self)
+            is_mongodb = self.tree_model.connection is not None and self.tree_model.connection.params.get('type') == 'MongoDB'
+            import_label = "Import JSON File..." if is_mongodb else "Import SQL File..."
+            import_sql_action = QAction(import_label, self)
             import_sql_action.triggered.connect(self._import_sql_file)
             menu.addAction(import_sql_action)
             
@@ -725,6 +727,11 @@ class DatabaseBrowser(QWidget):
         # Get the database name to determine if a database is selected
         db_name = connection.get_database_name()
         has_database_selected = db_name != "(No database selected)"
+
+        # Update import button labels based on connection type
+        import_label = "Import JSON File" if connection.params.get('type') == 'MongoDB' else "Import SQL File"
+        self.import_sql_btn.setText(import_label)
+        self.import_sql_db_btn.setText(import_label)
         
         # Show appropriate buttons based on database selection state
         if has_database_selected:

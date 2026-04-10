@@ -74,9 +74,9 @@ class MainWindow(QMainWindow):
         # Import/Export submenu
         import_export_menu = QMenu("Import/Export", self)
         
-        import_sql_action = QAction("Import SQL File...", self)
-        import_sql_action.triggered.connect(self._import_sql_file)
-        import_export_menu.addAction(import_sql_action)
+        self.import_sql_action = QAction("Import SQL File...", self)
+        self.import_sql_action.triggered.connect(self._import_sql_file)
+        import_export_menu.addAction(self.import_sql_action)
         
         import_export_menu.addSeparator()
         
@@ -561,6 +561,18 @@ class MainWindow(QMainWindow):
         
         # Update the run query button state
         self._update_run_query_button_state()
+
+        # Update import action label based on connection type
+        if index >= 0:
+            current_tab = self.connection_tabs.widget(index)
+            if current_tab is not None and hasattr(current_tab, 'connection'):
+                connection = getattr(current_tab, 'connection')
+                if connection is not None and connection.params.get('type') == 'MongoDB':
+                    self.import_sql_action.setText("Import JSON File...")
+                else:
+                    self.import_sql_action.setText("Import SQL File...")
+            else:
+                self.import_sql_action.setText("Import SQL File...")
     
     def _update_connection_label(self):
         """Update the connection label based on the current tab"""
