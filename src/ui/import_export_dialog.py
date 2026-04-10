@@ -31,6 +31,7 @@ class ImportExportDialog(QDialog):
         self.mode = mode
         self.selected_tables = []
         self.file_path = ""
+        self.is_mongodb = connection.params.get('type') == 'MongoDB'
         
         self._create_ui()
     
@@ -40,7 +41,10 @@ class ImportExportDialog(QDialog):
             self.setWindowTitle("Export Database")
             self.setMinimumSize(500, 400)
         else:
-            self.setWindowTitle("Import SQL File")
+            if self.is_mongodb:
+                self.setWindowTitle("Import JSON File")
+            else:
+                self.setWindowTitle("Import SQL File")
             self.setMinimumSize(500, 200)
         
         layout = QVBoxLayout(self)
@@ -57,13 +61,15 @@ class ImportExportDialog(QDialog):
             
             self.scope_group = QButtonGroup(self)
             
-            self.full_db_radio = QRadioButton("Entire Database")
+            entity_label = "Entire Database"
+            self.full_db_radio = QRadioButton(entity_label)
             self.full_db_radio.setChecked(True)
             self.full_db_radio.toggled.connect(self._toggle_table_selection)
             self.scope_group.addButton(self.full_db_radio)
             scope_layout.addWidget(self.full_db_radio)
             
-            self.selected_tables_radio = QRadioButton("Selected Tables")
+            selected_label = "Selected Collections" if self.is_mongodb else "Selected Tables"
+            self.selected_tables_radio = QRadioButton(selected_label)
             self.selected_tables_radio.toggled.connect(self._toggle_table_selection)
             self.scope_group.addButton(self.selected_tables_radio)
             scope_layout.addWidget(self.selected_tables_radio)
@@ -102,8 +108,8 @@ class ImportExportDialog(QDialog):
         
         layout.addLayout(file_layout)
         
-        # Format selection for export
-        if self.mode == "export":
+        # Format selection for export (not shown for MongoDB — always JSON)
+        if self.mode == "export" and not self.is_mongodb:
             format_layout = QHBoxLayout()
             format_layout.addWidget(QLabel("Format:"))
             
@@ -175,21 +181,25 @@ class ImportExportDialog(QDialog):
             
             if not directory:
                 return
-                
-            # Get the current format
-            format_index = self.format_combo.currentIndex()
-            format_data = self.format_combo.itemData(format_index)
             
-            # Set default extension based on format
-            if format_data == "sql":
-                extension = "sql"
-                filter_text = "SQL Files (*.sql)"
-            elif format_data == "csv":
-                extension = "csv"
-                filter_text = "CSV Files (*.csv)"
-            elif format_data == "xlsx":
-                extension = "xlsx"
-                filter_text = "Excel Files (*.xlsx)"
+            if self.is_mongodb:
+                extension = "json"
+                filter_text = "JSON Files (*.json)"
+            else:
+                # Get the current format
+                format_index = self.format_combo.currentIndex()
+                format_data = self.format_combo.itemData(format_index)
+                
+                # Set default extension based on format
+                if format_data == "sql":
+                    extension = "sql"
+                    filter_text = "SQL Files (*.sql)"
+                elif format_data == "csv":
+                    extension = "csv"
+                    filter_text = "CSV Files (*.csv)"
+                elif format_data == "xlsx":
+                    extension = "xlsx"
+                    filter_text = "Excel Files (*.xlsx)"
             
             # Now, get a filename
             filename, ok = QInputDialog.getText(
@@ -223,19 +233,27 @@ class ImportExportDialog(QDialog):
                     return
         else:
             # For import, use the standard file open dialog
-            file_path, _ = QFileDialog.getOpenFileName(
-                self,
-                "Import SQL File",
-                "",
-                "SQL Files (*.sql);;All Files (*)"
-            )
+            if self.is_mongodb:
+                file_path, _ = QFileDialog.getOpenFileName(
+                    self,
+                    "Import JSON File",
+                    "",
+                    "JSON Files (*.json);;All Files (*)"
+                )
+            else:
+                file_path, _ = QFileDialog.getOpenFileName(
+                    self,
+                    "Import SQL File",
+                    "",
+                    "SQL Files (*.sql);;All Files (*)"
+                )
         
         if file_path:
             self.file_path = file_path
             self.file_path_label.setText(file_path)
             
-            # Update format combo based on file extension for export
-            if self.mode == "export":
+            # Update format combo based on file extension for non-MongoDB export
+            if self.mode == "export" and not self.is_mongodb:
                 extension = file_path.split('.')[-1].lower()
                 if extension == "sql":
                     self.format_combo.setCurrentIndex(0)
@@ -251,6 +269,26 @@ class ImportExportDialog(QDialog):
             return
         
         try:
+            if self.is_mongodb:
+                # Get selected collections if applicable
+                collections = None
+                if self.selected_tables_radio.isChecked():
+                    collections = [item.text() for item in self.tables_list.selectedItems()]
+                    if not collections:
+                        QMessageBox.warning(self, "Export Error", "Please select at least one collection to export.")
+                        return
+                
+                progress = QProgressDialog("Exporting database as JSON...", "Cancel", 0, 100, self)
+                progress.setWindowModality(Qt.WindowModality.WindowModal)
+                progress.setValue(10)
+                
+                self.connection.export_to_json(self.file_path, collections)
+                
+                progress.setValue(100)
+                QMessageBox.information(self, "Export Complete", f"Database exported successfully to {self.file_path}")
+                self.accept()
+                return
+
             # Get selected format
             format_data = self.format_combo.currentData()
             
@@ -381,19 +419,40 @@ class ImportExportDialog(QDialog):
             QMessageBox.warning(self, "Import Error", "Please select a file to import.")
             return
         
-        # Confirm import
-        confirm = QMessageBox.question(
-            self,
-            "Confirm Import",
-            "Importing SQL may modify or delete existing data. Are you sure you want to continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
+        if self.is_mongodb:
+            confirm = QMessageBox.question(
+                self,
+                "Confirm Import",
+                "Importing JSON may add data to existing collections. Are you sure you want to continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+        else:
+            confirm = QMessageBox.question(
+                self,
+                "Confirm Import",
+                "Importing SQL may modify or delete existing data. Are you sure you want to continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
         
         if confirm != QMessageBox.StandardButton.Yes:
             return
         
         try:
+            if self.is_mongodb:
+                progress = QProgressDialog("Importing JSON file...", "Cancel", 0, 100, self)
+                progress.setWindowModality(Qt.WindowModality.WindowModal)
+                progress.setValue(10)
+                progress.setLabelText("Importing JSON file into MongoDB database...")
+                
+                self.connection.import_from_json(self.file_path)
+                
+                progress.setValue(100)
+                QMessageBox.information(self, "Import Complete", "JSON file imported successfully.")
+                self.accept()
+                return
+
             # Show progress dialog
             progress = QProgressDialog("Importing SQL file...", "Cancel", 0, 100, self)
             progress.setWindowModality(Qt.WindowModality.WindowModal)
@@ -423,5 +482,5 @@ class ImportExportDialog(QDialog):
             QMessageBox.critical(self, "Import Error", error_msg)
         except Exception as e:
             # Handle other errors
-            error_msg = f"Failed to import SQL file: {str(e)}"
+            error_msg = f"Failed to import file: {str(e)}"
             QMessageBox.critical(self, "Import Error", error_msg)

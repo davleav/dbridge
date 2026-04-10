@@ -983,6 +983,51 @@ class MongoConnection:
     def import_sql_file(self, file_path: str) -> bool:
         raise ValueError("SQL import is not supported for MongoDB connections")
 
+    def export_to_json(self, file_path: str, collections: Optional[List[str]] = None) -> bool:
+        if self.db is None:
+            raise ValueError("No database selected")
+        from bson import ObjectId
+        import datetime as dt
+
+        class MongoJSONEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, ObjectId):
+                    return str(obj)
+                if isinstance(obj, (dt.datetime, dt.date)):
+                    return obj.isoformat()
+                return super().default(obj)
+
+        if collections is None:
+            collections = self.db.list_collection_names()
+
+        data: Dict[str, Any] = {}
+        for coll_name in collections:
+            docs = list(self.db[coll_name].find({}))
+            data[coll_name] = docs
+
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, cls=MongoJSONEncoder, indent=2, ensure_ascii=False)
+
+        return True
+
+    def import_from_json(self, file_path: str) -> bool:
+        if self.db is None:
+            raise ValueError("No database selected")
+
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        if not isinstance(data, dict):
+            raise ValueError("JSON file must contain an object mapping collection names to arrays of documents")
+
+        for coll_name, documents in data.items():
+            if not isinstance(documents, list):
+                raise ValueError(f"Collection '{coll_name}' must be an array of documents")
+            if documents:
+                self.db[coll_name].insert_many(documents)
+
+        return True
+
     def close(self) -> None:
         if self.client:
             self.client.close()
